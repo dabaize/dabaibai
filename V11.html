@@ -1,0 +1,369 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>QmanDreamer：从“枷锁”到“自由”的发布演进 V13</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
+    
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        studio: {
+                            base: '#fbfbfd',
+                            text: '#1d1d1f',
+                            accent: '#0071e3',
+                            success: '#34c759',
+                            danger: '#ff3b30',
+                            card: '#ffffff',
+                            border: '#d2d2d7'
+                        }
+                    },
+                    borderRadius: { '4xl': '2rem' }
+                }
+            }
+        }
+    </script>
+
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;700;900&family=Noto+Sans+SC:wght@300;500;900&display=swap');
+        
+        body { font-family: 'Inter', 'Noto Sans SC', sans-serif; background-color: #fbfbfd; color: #1d1d1f; }
+
+        .glass-panel {
+            background: rgba(255, 255, 255, 0.7);
+            backdrop-filter: blur(20px);
+            border: 1px solid rgba(210, 210, 215, 0.5);
+            box-shadow: 0 20px 40px rgba(0,0,0,0.04);
+        }
+
+        .file-card {
+            width: 40px; height: 50px;
+            background: white;
+            border: 1px solid #d2d2d7;
+            border-radius: 6px;
+            position: absolute;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.08);
+            opacity: 0;
+            z-index: 20;
+        }
+
+        .pipeline-node {
+            transition: all 0.6s cubic-bezier(0.2, 0, 0, 1);
+        }
+
+        .active-node {
+            border-color: #0071e3 !important;
+            transform: scale(1.05);
+            box-shadow: 0 10px 30px rgba(0, 113, 227, 0.15);
+        }
+
+        /* 隐藏滚动条 */
+        .no-scrollbar::-webkit-scrollbar { display: none; }
+        
+        /* 按钮光泽 */
+        .btn-shimmer {
+            position: relative;
+            overflow: hidden;
+        }
+        .btn-shimmer::after {
+            content: "";
+            position: absolute;
+            top: -50%; left: -50%;
+            width: 200%; height: 200%;
+            background: linear-gradient(45deg, transparent, rgba(255,255,255,0.2), transparent);
+            transform: rotate(45deg);
+            animation: shimmer 3s infinite;
+        }
+        @keyframes shimmer {
+            0% { transform: translateX(-100%) rotate(45deg); }
+            100% { transform: translateX(100%) rotate(45deg); }
+        }
+    </style>
+</head>
+<body class="antialiased">
+
+    <!-- 顶层 Header -->
+    <nav class="sticky top-0 z-50 bg-white/80 backdrop-blur-md border-b border-studio-border/50">
+        <div class="max-w-6xl mx-auto px-6 py-4 flex justify-between items-center">
+            <div class="flex items-center space-x-2">
+                <span class="text-xl font-black tracking-tight">QmanDreamer</span>
+                <span class="px-2 py-0.5 bg-studio-text text-white text-[9px] rounded font-bold">PRO AUTO</span>
+            </div>
+            <div class="flex space-x-8 text-[11px] font-bold uppercase tracking-wider text-studio-text/40">
+                <div class="flex items-center space-x-1"><span class="w-1.5 h-1.5 rounded-full bg-studio-danger"></span><span>Manual Burden</span></div>
+                <div class="flex items-center space-x-1"><span class="w-1.5 h-1.5 rounded-full bg-studio-success"></span><span>Automation Flow</span></div>
+            </div>
+        </div>
+    </nav>
+
+    <main class="max-w-6xl mx-auto px-6 py-20 space-y-32">
+
+        <!-- Section 1: 核心对比展示 (秩序与混沌) -->
+        <section class="grid grid-cols-1 lg:grid-cols-2 gap-16 items-center">
+            
+            <!-- 左侧：旧时代的混沌 -->
+            <div class="relative order-2 lg:order-1">
+                <div class="absolute -top-10 -left-10 text-[120px] font-black text-black/[0.03] select-none">PAIN</div>
+                <div class="space-y-4">
+                    <h3 class="text-2xl font-black text-studio-text tracking-tight">2024：破碎的链条</h3>
+                    <p class="text-studio-text/60 text-sm max-w-sm leading-relaxed">每一个版本发布，都是一场对意志的考验。32 个断裂的人工节点，将研发人员死死锁在屏幕前。</p>
+                    
+                    <div class="mt-8 relative h-[300px] overflow-hidden rounded-3xl border border-studio-border/50 bg-white shadow-inner">
+                        <div id="legacy-scroll" class="p-6 space-y-3">
+                            <!-- 动态生成的碎片任务 -->
+                        </div>
+                        <div class="absolute inset-x-0 bottom-0 h-24 bg-gradient-to-t from-white to-transparent"></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 右侧：新时代的秩序 (核心) -->
+            <div class="lg:order-2">
+                <div class="glass-panel p-10 rounded-4xl relative overflow-hidden">
+                    <div class="flex items-center justify-between mb-10">
+                        <div>
+                            <h3 class="text-3xl font-black tracking-tighter">极简。释放。</h3>
+                            <p class="text-studio-accent text-xs font-bold mt-1 uppercase tracking-widest">Automation Engine V13</p>
+                        </div>
+                        <div class="w-12 h-12 rounded-2xl bg-studio-accent/10 flex items-center justify-center">
+                            <i data-lucide="zap" class="text-studio-accent w-6 h-6"></i>
+                        </div>
+                    </div>
+
+                    <!-- 交互触发区 -->
+                    <div class="space-y-6">
+                        <div class="relative group">
+                            <input readonly type="text" value="qman release --prod --v13.0" class="w-full bg-studio-base border border-studio-border rounded-2xl px-6 py-5 font-mono text-sm text-studio-text outline-none">
+                            <button onclick="runMasterpiece()" class="btn-shimmer absolute right-2 top-2 bottom-2 px-6 bg-studio-accent text-white font-bold rounded-xl text-sm transition-transform active:scale-95 shadow-lg shadow-studio-accent/20">
+                                启动发布
+                            </button>
+                        </div>
+
+                        <!-- 物理路径可视化 (枢纽) -->
+                        <div class="relative bg-studio-base border border-studio-border/50 rounded-3xl p-8 h-[240px] flex flex-col justify-center overflow-hidden">
+                            <!-- 传送带轨道 -->
+                            <div class="absolute top-1/2 inset-x-0 h-0.5 bg-studio-border -translate-y-1/2"></div>
+                            
+                            <!-- 文件流转容器 -->
+                            <div id="file-delivery-zone" class="absolute inset-0 pointer-events-none"></div>
+
+                            <!-- 物理节点 -->
+                            <div class="flex justify-between relative z-10">
+                                <div id="p1" class="pipeline-node w-14 h-14 bg-white border border-studio-border rounded-2xl flex items-center justify-center text-studio-text/20">
+                                    <i data-lucide="box"></i>
+                                </div>
+                                <div id="p2" class="pipeline-node w-14 h-14 bg-white border border-studio-border rounded-2xl flex items-center justify-center text-studio-text/20">
+                                    <i data-lucide="shield-check"></i>
+                                </div>
+                                <div id="p3" class="pipeline-node w-14 h-14 bg-white border border-studio-border rounded-2xl flex items-center justify-center text-studio-text/20">
+                                    <i data-lucide="cloud-upload"></i>
+                                </div>
+                                <div id="p4" class="pipeline-node w-14 h-14 bg-white border border-studio-border rounded-2xl flex items-center justify-center text-studio-text/20">
+                                    <i data-lucide="globe"></i>
+                                </div>
+                            </div>
+                            
+                            <!-- 标签 -->
+                            <div class="flex justify-between mt-6 px-1">
+                                <span class="text-[9px] font-black uppercase text-studio-text/30">Pack</span>
+                                <span class="text-[9px] font-black uppercase text-studio-text/30">Secure</span>
+                                <span class="text-[9px] font-black uppercase text-studio-text/30">Push</span>
+                                <span class="text-[9px] font-black uppercase text-studio-text/30">Live</span>
+                            </div>
+                        </div>
+
+                        <!-- 极简日志 -->
+                        <div id="status-line" class="text-center text-[11px] font-bold text-studio-text/40 tracking-wide uppercase italic">
+                            System Idle. Ready for signal.
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Section 2: 关键价值 (大数字) -->
+        <section class="grid grid-cols-1 md:grid-cols-3 gap-12">
+            <div class="bg-white p-10 rounded-4xl border border-studio-border/50">
+                <p class="text-[10px] font-bold text-studio-text/40 uppercase tracking-[0.2em] mb-4">Manual Intervention</p>
+                <div class="flex items-baseline space-x-2">
+                    <span class="text-7xl font-black text-studio-accent tracking-tighter">1</span>
+                    <span class="text-xl font-bold text-studio-text/20">/ 32</span>
+                </div>
+                <p class="text-xs text-studio-text/60 mt-4 leading-relaxed font-medium">从“逐个确认”到“只需一次回车”的质变。</p>
+            </div>
+
+            <div class="bg-studio-text p-10 rounded-4xl">
+                <p class="text-[10px] font-bold text-white/40 uppercase tracking-[0.2em] mb-4">Delivery Velocity</p>
+                <div class="flex items-baseline space-x-2">
+                    <span class="text-7xl font-black text-white tracking-tighter">100%</span>
+                </div>
+                <p class="text-xs text-white/50 mt-4 leading-relaxed font-medium">无人值守流水线，确保环境参数与资产状态绝对一致。</p>
+            </div>
+
+            <div class="bg-white p-10 rounded-4xl border border-studio-border/50 flex flex-col justify-center">
+                <canvas id="impactChart"></canvas>
+            </div>
+        </section>
+
+        <!-- Section 3: 禅意总结 -->
+        <section class="text-center space-y-8 py-20">
+            <h2 class="text-5xl font-black tracking-tighter">把时间，还给创造。</h2>
+            <p class="text-studio-text/50 max-w-xl mx-auto text-lg leading-relaxed">
+                QmanDreamer 的自动化演进不只是为了速度，<br>更是为了让每一位研发人员，重新获得“离开座位的自由”。
+            </p>
+            <div class="pt-10">
+                <div class="inline-flex items-center space-x-4 bg-studio-success/10 text-studio-success px-8 py-4 rounded-full font-black text-sm uppercase tracking-widest border border-studio-success/20">
+                    <i data-lucide="coffee"></i>
+                    <span>Coffee break is ready for you</span>
+                </div>
+            </div>
+        </section>
+
+    </main>
+
+    <footer class="border-t border-studio-border py-12 text-center text-[10px] font-bold text-studio-text/20 uppercase tracking-[0.4em]">
+        QmanDreamer Automation Report 2026 // Design by Studio
+    </footer>
+
+    <script>
+        // 初始化图标
+        lucide.createIcons();
+
+        // 1. 生成旧时代的碎片任务
+        const legacyTasks = [
+            "手动合并资源分支", "校验精模文件哈希值", "启动 Unity 漫长重载", 
+            "检查 Addressable 缺失引用", "点击 Virbox 套壳按钮", "手动修改版本号 JSON",
+            "上传 CDN 漫长等待", "手动清理远程回滚备份", "核对 Hotfix 脚本版本",
+            "登录飞书群发送发布公告", "检查 UOS 存储桶权限"
+        ];
+        const legacyContainer = document.getElementById('legacy-scroll');
+        function populateLegacy() {
+            for(let i=0; i<30; i++) {
+                const item = document.createElement('div');
+                item.className = "flex items-center justify-between p-4 bg-studio-base/50 rounded-2xl border border-studio-border/30 text-[10px] text-studio-text/50 font-medium";
+                item.innerHTML = `<span>[NODE ${i+1}] ${legacyTasks[i % legacyTasks.length]}</span> <span class="text-studio-danger font-black">等待操作</span>`;
+                legacyContainer.appendChild(item);
+            }
+        }
+        populateLegacy();
+
+        // 2. 核心交付动画逻辑
+        let isRunning = false;
+        const statusLabel = document.getElementById('status-line');
+        const deliveryZone = document.getElementById('file-delivery-zone');
+
+        const pipelineLogs = [
+            { step: 1, text: "📦 初始化资产打包流水线 (Phase 1)" },
+            { step: 2, text: "🛡️ 正在注入安全混淆与加固 (Phase 2)" },
+            { step: 3, text: "🚀 资源分片上传至 CDN 节点 (Phase 3)" },
+            { step: 4, text: "✅ 全球节点同步完毕。版本 13.0 已上线。" }
+        ];
+
+        async function runMasterpiece() {
+            if(isRunning) return;
+            isRunning = true;
+            
+            // 重置状态
+            resetNodes();
+            statusLabel.innerText = "Connecting to Engine...";
+            statusLabel.classList.remove('text-studio-text/40');
+            statusLabel.classList.add('text-studio-accent');
+
+            for(let i=0; i<pipelineLogs.length; i++) {
+                const log = pipelineLogs[i];
+                statusLabel.innerText = log.text;
+                
+                // 激活节点
+                const node = document.getElementById(`p${log.step}`);
+                node.classList.add('active-node');
+
+                // 产生一批“文件卡片”交付流
+                for(let j=0; j<4; j++) {
+                    setTimeout(() => spawnFileCard(log.step), j * 250);
+                }
+
+                await new Promise(r => setTimeout(r, 2200));
+            }
+
+            statusLabel.innerText = "Process Complete. Enjoy your free time.";
+            statusLabel.classList.replace('text-studio-accent', 'text-studio-success');
+            isRunning = false;
+        }
+
+        function spawnFileCard(step) {
+            const card = document.createElement('div');
+            card.className = "file-card";
+            card.innerHTML = `<div class="w-4 h-5 border border-studio-border/50 rounded bg-studio-base"></div>`;
+            
+            // 计算起止位置百分比
+            const startX = (step - 1) * 25 + 5;
+            const endX = step * 25 + 5;
+            
+            card.style.left = startX + "%";
+            card.style.top = "45%";
+            deliveryZone.appendChild(card);
+
+            // 如果是加固阶段，变色
+            if(step === 2) card.style.background = "#eef6ff";
+            // 如果是发布阶段，变绿
+            if(step >= 4) card.style.background = "#f2fff5";
+
+            card.animate([
+                { left: startX + "%", opacity: 0, transform: 'scale(0.8) translateY(10px)' },
+                { opacity: 1, transform: 'scale(1) translateY(0)', offset: 0.2 },
+                { opacity: 1, transform: 'scale(1) translateY(0)', offset: 0.8 },
+                { left: endX + "%", opacity: 0, transform: 'scale(0.8) translateY(-10px)' }
+            ], {
+                duration: 1800,
+                easing: 'cubic-bezier(0.2, 0, 0, 1)'
+            }).onfinish = () => card.remove();
+        }
+
+        function resetNodes() {
+            for(let i=1; i<=4; i++) {
+                document.getElementById(`p${i}`).classList.remove('active-node');
+            }
+        }
+
+        // 3. 统计图表
+        function initCharts() {
+            const ctx = document.getElementById('impactChart').getContext('2d');
+            new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels: ['2024 (Manual)', '2026 (Auto)'],
+                    datasets: [{
+                        label: '人工干预步骤',
+                        data: [32, 1],
+                        backgroundColor: ['#d2d2d7', '#0071e3'],
+                        borderRadius: 8,
+                        barThickness: 40
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: { legend: { display: false } },
+                    scales: {
+                        y: { display: false },
+                        x: { grid: { display: false }, ticks: { font: { weight: 'bold', size: 9 } } }
+                    }
+                }
+            });
+        }
+
+        window.onload = () => {
+            initCharts();
+        };
+
+    </script>
+</body>
+</html>

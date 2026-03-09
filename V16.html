@@ -1,0 +1,751 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>QmanDreamer：自动化构建演进报告 V16</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
+    
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        studio: {
+                            base: '#fbfbfd',
+                            text: '#1d1d1f',
+                            accent: '#0071e3', // Apple Blue
+                            accentDark: '#005bb5',
+                            success: '#34c759',
+                            danger: '#ff3b30',
+                            purple: '#af52de',
+                            card: '#ffffff',
+                            border: '#d2d2d7',
+                            feishu: '#3370ff',
+                            darkbg: '#0a0a0c', // High-end dark bg for terminal
+                            surface: '#f5f5f7'
+                        }
+                    },
+                    borderRadius: { '4xl': '2rem' },
+                    boxShadow: {
+                        'glow-accent': '0 0 20px rgba(0, 113, 227, 0.4)',
+                        'glow-success': '0 0 20px rgba(52, 199, 89, 0.4)',
+                        'glass': '0 8px 32px 0 rgba(31, 38, 135, 0.07)',
+                    },
+                    animation: {
+                        'scroll-y': 'scrollY 40s linear infinite',
+                        'pulse-slow': 'pulse 3s cubic-bezier(0.4, 0, 0.6, 1) infinite',
+                    },
+                    keyframes: {
+                        scrollY: {
+                            '0%': { transform: 'translateY(0)' },
+                            '100%': { transform: 'translateY(-50%)' },
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700;900&family=Noto+Sans+SC:wght@300;500;700;900&family=JetBrains+Mono:wght@400;700&display=swap');
+        
+        body { 
+            font-family: 'Inter', 'Noto Sans SC', sans-serif; 
+            background-color: #f5f5f7; 
+            color: #1d1d1f; 
+            overflow-x: hidden; 
+            -webkit-font-smoothing: antialiased;
+        }
+        
+        .font-mono { font-family: 'JetBrains Mono', monospace; }
+
+        /* 高级毛玻璃面板 */
+        .glass-panel {
+            background: rgba(255, 255, 255, 0.7);
+            backdrop-filter: blur(40px);
+            -webkit-backdrop-filter: blur(40px);
+            border: 1px solid rgba(255, 255, 255, 0.5);
+            box-shadow: 0 10px 40px -10px rgba(0,0,0,0.08);
+        }
+
+        /* 视图切换平滑过渡 */
+        .view-content { transition: opacity 0.5s ease, transform 0.5s cubic-bezier(0.2, 0.8, 0.2, 1); }
+        .hidden-view { opacity: 0; transform: translateY(15px) scale(0.98); pointer-events: none; position: absolute; top: 0; left: 0; right: 0; visibility: hidden; }
+        .active-view { opacity: 1; transform: translateY(0) scale(1); position: relative; visibility: visible; }
+
+        /* 飞书对话框特效 */
+        .chat-bubble {
+            max-width: 88%;
+            padding: 14px 18px;
+            border-radius: 20px;
+            font-size: 13px;
+            margin-bottom: 16px;
+            line-height: 1.6;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.03);
+            animation: slideUpFade 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+            opacity: 0;
+            transform: translateY(10px);
+        }
+        @keyframes slideUpFade {
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        /* ------------------ 顶级流水线节点 UI ------------------ */
+        .pipeline-track {
+            position: absolute; top: 28px; left: 10%; right: 10%; height: 4px;
+            background: #e5e5ea; border-radius: 4px; z-index: 0; overflow: hidden;
+        }
+        .pipeline-progress {
+            height: 100%; width: 0%; background: linear-gradient(90deg, #0071e3, #47a1ff);
+            transition: width 0.8s cubic-bezier(0.25, 1, 0.5, 1);
+            position: relative;
+        }
+        .pipeline-progress::after {
+            content: ''; position: absolute; right: 0; top: 50%; transform: translateY(-50%);
+            width: 12px; height: 12px; background: white; border-radius: 50%;
+            box-shadow: 0 0 10px 2px rgba(0, 113, 227, 0.8);
+        }
+
+        .node-wrapper { position: relative; z-index: 10; display: flex; flex-direction: column; items: center; flex: 1; transition: all 0.5s ease; }
+        
+        .node-circle {
+            width: 56px; height: 56px; border-radius: 50%;
+            background: #ffffff; border: 2px solid #e5e5ea;
+            display: flex; align-items: center; justify-content: center;
+            color: #86868b; transition: all 0.5s cubic-bezier(0.34, 1.56, 0.64, 1);
+            margin: 0 auto; position: relative;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.05);
+        }
+
+        .node-wrapper.active .node-circle {
+            border-color: #0071e3; background: #0071e3; color: #ffffff;
+            transform: scale(1.15); box-shadow: 0 0 0 6px rgba(0, 113, 227, 0.15), 0 10px 20px rgba(0, 113, 227, 0.3);
+        }
+        
+        .node-wrapper.completed .node-circle {
+            border-color: #34c759; background: #ffffff; color: #34c759;
+            transform: scale(1); box-shadow: 0 4px 10px rgba(52, 199, 89, 0.1);
+        }
+
+        .node-label { margin-top: 16px; text-align: center; transition: all 0.3s ease; }
+        .node-title { font-size: 12px; font-weight: 800; color: #86868b; transition: color 0.3s; }
+        .node-sub { font-size: 10px; color: #a1a1a6; font-weight: 500; opacity: 0; transform: translateY(-5px); transition: all 0.4s; }
+        
+        .node-wrapper.active .node-title { color: #1d1d1f; }
+        .node-wrapper.active .node-sub { opacity: 1; transform: translateY(0); color: #0071e3; }
+        .node-wrapper.completed .node-title { color: #1d1d1f; }
+
+        .energy-particle {
+            position: absolute; top: 24px;
+            width: 12px; height: 12px; background: #fff; border-radius: 50%;
+            box-shadow: 0 0 15px 4px rgba(0, 113, 227, 0.8), 0 0 30px rgba(0, 113, 227, 0.4);
+            z-index: 20; pointer-events: none; opacity: 0;
+            &::after {
+                content: ''; position: absolute; right: 8px; top: 50%; transform: translateY(-50%);
+                width: 40px; height: 4px; background: linear-gradient(to right, rgba(0,113,227,0), rgba(0,113,227,1));
+                border-radius: 4px; z-index: -1;
+            }
+        }
+
+        /* ------------------ 无限滚动手动列表 UI ------------------ */
+        .scrolling-wrapper {
+            position: relative; height: 400px; overflow: hidden;
+            mask-image: linear-gradient(to bottom, transparent, black 10%, black 90%, transparent);
+            -webkit-mask-image: linear-gradient(to bottom, transparent, black 10%, black 90%, transparent);
+        }
+        .scrolling-content { padding-top: 20px; padding-bottom: 20px; }
+        .scrolling-content:hover { animation-play-state: paused; }
+
+        .manual-step-card {
+            background: rgba(255, 255, 255, 0.6); border: 1px solid rgba(255, 59, 48, 0.15);
+            transition: all 0.3s ease;
+        }
+        .manual-step-card:hover {
+            background: #ffffff; border-color: rgba(255, 59, 48, 0.4);
+            transform: translateX(5px) scale(1.02); box-shadow: 0 10px 20px rgba(255, 59, 48, 0.05);
+        }
+
+        /* 隐藏滚动条 */
+        .no-scrollbar::-webkit-scrollbar { display: none; }
+        .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+        
+        /* 总结页卡片悬浮效果 */
+        .summary-card {
+            transition: transform 0.3s ease, box-shadow 0.3s ease;
+        }
+        .summary-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 15px 30px -10px rgba(0,0,0,0.1);
+        }
+    </style>
+</head>
+<body class="antialiased flex flex-col min-h-screen">
+
+    <!-- 极简顶部导航 -->
+    <nav class="sticky top-0 z-[100] bg-white/70 backdrop-blur-xl border-b border-studio-border/40 transition-all">
+        <div class="max-w-7xl mx-auto px-6 py-4 flex justify-between items-center">
+            <div class="flex items-center space-x-3 group cursor-pointer">
+                <div class="w-9 h-9 bg-gradient-to-br from-studio-feishu to-blue-400 rounded-xl flex items-center justify-center text-white shadow-lg shadow-blue-500/30 group-hover:scale-105 transition-transform">
+                    <i data-lucide="bot-message-square" class="w-5 h-5"></i>
+                </div>
+                <div>
+                    <span class="text-sm font-black tracking-tight block text-studio-text">QmanDreamer</span>
+                    <span class="text-[10px] font-bold text-studio-accent uppercase tracking-widest opacity-80">自动发布系统</span>
+                </div>
+            </div>
+            
+            <div class="bg-studio-surface p-1 rounded-xl border border-studio-border/50 flex shadow-inner gap-1">
+                <!-- 默认激活纯手工历史 -->
+                <button id="btn-legacy" onclick="switchView('legacy')" class="px-5 py-2 rounded-lg text-xs font-bold transition-all bg-white shadow-sm text-studio-danger ring-1 ring-black/5 flex items-center">
+                    <i data-lucide="history" class="w-3 h-3 mr-1.5"></i>纯手工历史
+                </button>
+                <button id="btn-auto" onclick="switchView('auto')" class="px-5 py-2 rounded-lg text-xs font-bold transition-all text-studio-text/50 hover:text-studio-text flex items-center">
+                    <i data-lucide="sparkles" class="w-3 h-3 mr-1.5"></i>全自动发布
+                </button>
+                <button id="btn-summary" onclick="switchView('summary')" class="px-5 py-2 rounded-lg text-xs font-bold transition-all text-studio-text/50 hover:text-studio-text flex items-center">
+                    <i data-lucide="layout-dashboard" class="w-3 h-3 mr-1.5"></i>项目总结
+                </button>
+            </div>
+        </div>
+    </nav>
+
+    <main class="max-w-7xl mx-auto px-6 py-8 flex-grow w-full relative">
+
+        <!-- ==================== 1. 手动对比视图：无限滚动人肉史 (默认显示) ==================== -->
+        <section id="view-legacy" class="view-content active-view w-full space-y-6">
+            <div class="glass-panel p-10 rounded-4xl border border-studio-danger/10 shadow-[0_20px_60px_-15px_rgba(255,59,48,0.1)] relative overflow-hidden">
+                <!-- 装饰性背景光晕 -->
+                <div class="absolute -top-40 -right-40 w-96 h-96 bg-studio-danger/10 rounded-full blur-[80px] pointer-events-none"></div>
+
+                <div class="flex flex-col md:flex-row md:items-end justify-between mb-8 border-b border-studio-border/30 pb-6 gap-4 relative z-10">
+                    <div>
+                        <div class="inline-flex items-center space-x-2 px-3 py-1 bg-studio-danger/10 rounded-full mb-3">
+                            <i data-lucide="triangle-alert" class="w-3 h-3 text-studio-danger"></i>
+                            <span class="text-[10px] font-black text-studio-danger uppercase tracking-wider">过去的纯手工流程</span>
+                        </div>
+                        <h3 class="text-3xl lg:text-4xl font-black text-studio-text tracking-tight">过去手工打包的痛苦</h3>
+                        <p class="text-sm text-studio-text/40 font-bold mt-2">曾经发布一个版本，需要人坐在电脑前死盯着完成这 32 个繁琐的步骤，极易出错</p>
+                    </div>
+                    <div class="text-right md:text-left">
+                        <span class="text-6xl font-black text-studio-danger tracking-tighter drop-shadow-md">32</span>
+                        <span class="text-xs font-black text-studio-text/30 uppercase ml-2 block md:inline-block">个人工步骤</span>
+                    </div>
+                </div>
+
+                <!-- 跑马灯区域 -->
+                <div class="scrolling-wrapper rounded-2xl bg-studio-surface/50 relative z-10 border border-studio-border/30">
+                    <div class="scrolling-content animate-scroll-y flex flex-col space-y-3 px-4" id="manual-scroller">
+                        <!-- JS动态注入内容 -->
+                    </div>
+                </div>
+            </div>
+
+            <!-- 手动痛点面板 (替换原有的数据对比) -->
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div class="bg-white p-8 rounded-3xl border border-studio-danger/20 shadow-sm flex flex-col justify-center relative overflow-hidden group">
+                    <div class="absolute -right-4 -top-4 text-studio-danger/5 transition-transform group-hover:scale-110">
+                        <i data-lucide="alert-triangle" class="w-32 h-32"></i>
+                    </div>
+                    <div class="relative z-10">
+                        <p class="text-[10px] font-black text-studio-danger/60 uppercase mb-2 tracking-widest font-mono">Pain Point 01</p>
+                        <p class="text-2xl font-black tracking-tight text-studio-text mb-3">极高的人为失误率</p>
+                        <p class="text-xs text-studio-text/60 leading-relaxed font-medium">32 个繁琐步骤中，任何一个“忘记改版本号”、“选错加壳配置”、“漏传 CDN 分片”都会导致包体损坏，需要废弃重打。</p>
+                    </div>
+                </div>
+                <div class="bg-studio-darkbg p-8 rounded-3xl shadow-lg flex flex-col justify-center border border-white/5 relative overflow-hidden group">
+                    <div class="absolute -right-4 -top-4 text-white/5 transition-transform group-hover:scale-110">
+                        <i data-lucide="brain-circuit" class="w-32 h-32"></i>
+                    </div>
+                    <div class="relative z-10">
+                        <p class="text-[10px] font-black text-white/30 uppercase mb-2 tracking-widest font-mono">Pain Point 02</p>
+                        <p class="text-2xl font-black tracking-tight text-white mb-3">严重的心智与时间消耗</p>
+                        <p class="text-xs text-white/50 leading-relaxed font-medium">开发人员必须像机器一样，死盯屏幕反复等待进度条并手动点击下一步，宝贵的生产力被严重浪费在打包流程上。</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== 2. 全自动视图：智能体驱动 (高级 UI 版) ==================== -->
+        <section id="view-auto" class="view-content hidden-view w-full">
+            <div class="grid grid-cols-1 lg:grid-cols-12 gap-8 h-[calc(100vh-160px)] min-h-[600px]">
+                
+                <!-- 左侧：飞书交互面板 -->
+                <div class="lg:col-span-4 flex flex-col glass-panel rounded-3xl overflow-hidden relative group border-studio-accent/10">
+                    <!-- 装饰光晕 -->
+                    <div class="absolute -top-20 -left-20 w-40 h-40 bg-blue-400 rounded-full mix-blend-multiply filter blur-[60px] opacity-20 group-hover:opacity-40 transition-opacity"></div>
+                    
+                    <div class="bg-white/40 backdrop-blur-md p-4 border-b border-studio-border/30 flex items-center justify-between z-10">
+                        <div class="flex items-center space-x-3">
+                            <div class="relative flex h-3 w-3">
+                              <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-studio-success opacity-75"></span>
+                              <span class="relative inline-flex rounded-full h-3 w-3 bg-studio-success"></span>
+                            </div>
+                            <span class="text-xs font-black text-studio-text">飞书机器人</span>
+                        </div>
+                        <div class="flex space-x-1.5 opacity-50">
+                            <div class="w-2.5 h-2.5 rounded-full bg-studio-border"></div>
+                            <div class="w-2.5 h-2.5 rounded-full bg-studio-border"></div>
+                        </div>
+                    </div>
+                    
+                    <div id="feishu-chat" class="flex-grow p-5 overflow-y-auto no-scrollbar space-y-2 z-10 relative">
+                        <div class="chat-bubble bg-white text-studio-text self-start rounded-tl-sm border border-studio-border/40">
+                            你好！飞书机器人已准备就绪，当前系统空闲。<br><br><span class="text-xs text-studio-text/50 font-medium">请问今天要发布哪个版本？</span>
+                        </div>
+                    </div>
+
+                    <div class="p-4 bg-white/80 backdrop-blur-md border-t border-studio-border/30 z-10">
+                        <div class="flex items-center space-x-2 bg-studio-surface rounded-2xl px-4 py-3 border border-studio-border/50 focus-within:border-studio-accent focus-within:ring-4 focus-within:ring-studio-accent/10 transition-all">
+                            <i data-lucide="terminal" class="w-4 h-4 text-studio-text/40"></i>
+                            <input id="chat-input" readonly type="text" value="发布版本 2026.03.09" class="bg-transparent flex-grow text-sm font-bold outline-none text-studio-text cursor-default">
+                            <button id="send-trigger" onclick="runAutomatedFlow()" class="p-2.5 bg-studio-text text-white rounded-xl hover:bg-studio-accent transition-colors shadow-md flex items-center justify-center group/btn">
+                                <i data-lucide="send" class="w-4 h-4 group-hover/btn:translate-x-0.5 group-hover/btn:-translate-y-0.5 transition-transform"></i>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 右侧：流水线可视化与终端反馈 -->
+                <div class="lg:col-span-8 flex flex-col space-y-6">
+                    
+                    <!-- 流水线主面板 -->
+                    <div class="glass-panel rounded-3xl p-10 flex-grow flex flex-col relative overflow-hidden bg-white/60">
+                        <!-- 装饰背景 -->
+                        <div class="absolute inset-0 bg-gradient-to-br from-white/40 to-transparent pointer-events-none"></div>
+                        
+                        <div class="flex items-start justify-between mb-12 relative z-10">
+                            <div>
+                                <h3 class="text-2xl font-black text-studio-text tracking-tight flex items-center">
+                                    全自动发布流水线 <i data-lucide="zap" class="w-5 h-5 text-studio-accent ml-2 fill-studio-accent/20"></i>
+                                </h3>
+                                <p class="text-[11px] text-studio-text/50 font-bold uppercase mt-1.5 tracking-widest font-mono">机器人实时同步监控</p>
+                            </div>
+                            <div id="pipeline-status" class="px-4 py-1.5 bg-studio-surface rounded-full text-[10px] font-black text-studio-text/40 border border-studio-border/50 shadow-sm flex items-center uppercase tracking-wider">
+                                <div class="w-1.5 h-1.5 rounded-full bg-studio-text/30 mr-2" id="status-dot"></div>
+                                <span id="status-text">待机中</span>
+                            </div>
+                        </div>
+
+                        <!-- 节点轨道系统 -->
+                        <div class="relative w-full flex-grow flex flex-col justify-center py-10 px-4">
+                            <!-- 底部轨道线 -->
+                            <div class="pipeline-track">
+                                <div id="line-progress" class="pipeline-progress"></div>
+                            </div>
+
+                            <!-- 能量粒子容器 -->
+                            <div id="particle-container" class="absolute inset-0 pointer-events-none"></div>
+
+                            <!-- 5个节点 -->
+                            <div class="flex justify-between relative w-full">
+                                <!-- Node 1 -->
+                                <div id="n1" class="node-wrapper">
+                                    <div class="node-circle"><i data-lucide="git-pull-request" class="w-6 h-6"></i></div>
+                                    <div class="node-label">
+                                        <div class="node-title">环境初始化</div>
+                                        <div class="node-sub">Git & 清理</div>
+                                    </div>
+                                </div>
+                                <!-- Node 2 -->
+                                <div id="n2" class="node-wrapper">
+                                    <div class="node-circle"><i data-lucide="box" class="w-6 h-6"></i></div>
+                                    <div class="node-label">
+                                        <div class="node-title">Unity 构建</div>
+                                        <div class="node-sub">MCP :4567</div>
+                                    </div>
+                                </div>
+                                <!-- Node 3 -->
+                                <div id="n3" class="node-wrapper">
+                                    <div class="node-circle"><i data-lucide="shield-check" class="w-6 h-6"></i></div>
+                                    <div class="node-label">
+                                        <div class="node-title">Virbox 加密</div>
+                                        <div class="node-sub">WSL + VBP</div>
+                                    </div>
+                                </div>
+                                <!-- Node 4 -->
+                                <div id="n4" class="node-wrapper">
+                                    <div class="node-circle"><i data-lucide="package-search" class="w-6 h-6"></i></div>
+                                    <div class="node-label">
+                                        <div class="node-title">Hub 打包</div>
+                                        <div class="node-sub">MCP :4568</div>
+                                    </div>
+                                </div>
+                                <!-- Node 5 -->
+                                <div id="n5" class="node-wrapper">
+                                    <div class="node-circle"><i data-lucide="cloud-lightning" class="w-6 h-6"></i></div>
+                                    <div class="node-label">
+                                        <div class="node-title">CDN 发布</div>
+                                        <div class="node-sub">UAS CLI</div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 极客终端日志面板 -->
+                    <div class="bg-studio-darkbg rounded-3xl h-[180px] flex flex-col overflow-hidden shadow-2xl relative">
+                        <!-- 终端顶栏 (Mac风格) -->
+                        <div class="h-10 bg-[#1e1e20] flex items-center px-4 border-b border-white/5 shrink-0">
+                            <div class="flex space-x-2">
+                                <div class="w-3 h-3 rounded-full bg-[#ff5f56]"></div>
+                                <div class="w-3 h-3 rounded-full bg-[#ffbd2e]"></div>
+                                <div class="w-3 h-3 rounded-full bg-[#27c93f]"></div>
+                            </div>
+                            <div class="mx-auto text-[10px] text-white/30 font-mono font-bold">系统日志 (System Logs)</div>
+                        </div>
+                        <!-- 日志内容区 -->
+                        <div id="diag-logs" class="p-5 overflow-y-auto no-scrollbar font-mono text-[12px] leading-relaxed text-[#a1a1aa] flex-grow">
+                            <div class="opacity-50 italic">> 等待发布指令...</div>
+                        </div>
+                        <!-- 底部发光装饰 -->
+                        <div class="absolute bottom-0 left-0 right-0 h-1 bg-gradient-to-r from-transparent via-studio-accent/50 to-transparent"></div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== 3. 总结视图：剖析与展望 ==================== -->
+        <section id="view-summary" class="view-content hidden-view w-full space-y-6">
+            
+            <div class="text-center mb-10 mt-4">
+                <h2 class="text-3xl font-black text-studio-text tracking-tight mb-3">系统重构总结与未来演进方向</h2>
+                <p class="text-studio-text/50 font-medium">从物理枷锁到完全解放，深度解析 QmanDreamer 自动化构建架构</p>
+            </div>
+
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+                <!-- 模块一：技术实现亮点 -->
+                <div class="glass-panel summary-card rounded-3xl p-8 flex flex-col">
+                    <div class="w-12 h-12 bg-blue-50 text-studio-accent rounded-2xl flex items-center justify-center mb-6 shadow-inner">
+                        <i data-lucide="cpu" class="w-6 h-6"></i>
+                    </div>
+                    <h3 class="text-xl font-black text-studio-text mb-4">核心技术架构</h3>
+                    <ul class="space-y-4 text-sm font-medium text-studio-text/70 flex-grow">
+                        <li class="flex items-start">
+                            <i data-lucide="check-circle-2" class="w-4 h-4 text-studio-accent mr-3 mt-0.5 shrink-0"></i>
+                            <div><strong class="text-studio-text block mb-0.5">HTTP 参数化通信</strong>摒弃繁琐的配置文件修改，通过本地 MCP 端口 (4567/4568) 直接向 Unity 引擎注入动态构建参数。</div>
+                        </li>
+                        <li class="flex items-start">
+                            <i data-lucide="check-circle-2" class="w-4 h-4 text-studio-accent mr-3 mt-0.5 shrink-0"></i>
+                            <div><strong class="text-studio-text block mb-0.5">跨环境打通 (WSL 交互)</strong>利用 PowerShell 脚本完美衔接 Windows 宿主机与 WSL Linux 子系统，实现 Virbox 引擎级代码加密。</div>
+                        </li>
+                        <li class="flex items-start">
+                            <i data-lucide="check-circle-2" class="w-4 h-4 text-studio-accent mr-3 mt-0.5 shrink-0"></i>
+                            <div><strong class="text-studio-text block mb-0.5">Editor 守护模式</strong>打破 Unity 传统批处理模式必须反复重启的弊端，保持引擎后台常驻，构建速度大幅提升。</div>
+                        </li>
+                    </ul>
+                </div>
+
+                <!-- 模块二：效能数据跃迁 -->
+                <div class="glass-panel summary-card rounded-3xl p-8 flex flex-col border-studio-accent/20">
+                    <div class="w-12 h-12 bg-blue-50 text-studio-accent rounded-2xl flex items-center justify-center mb-6 shadow-inner">
+                        <i data-lucide="bar-chart-horizontal" class="w-6 h-6"></i>
+                    </div>
+                    <h3 class="text-xl font-black text-studio-text mb-6">效能数据跃迁</h3>
+                    <div class="space-y-8 flex-grow">
+                        <div>
+                            <p class="text-[10px] font-black text-studio-text/40 uppercase mb-1 tracking-widest font-mono">人工操作次数 (Manual Steps)</p>
+                            <p class="text-4xl font-black tracking-tight text-studio-text flex items-baseline">
+                                32<span class="text-sm font-bold text-studio-text/40 mx-3">→</span><span class="text-studio-accent drop-shadow-[0_0_10px_rgba(0,113,227,0.3)]">0</span><span class="text-sm font-bold text-studio-accent ml-2">次</span>
+                            </p>
+                        </div>
+                        <div>
+                            <p class="text-[10px] font-black text-studio-text/40 uppercase mb-1 tracking-widest font-mono">执行准确率 (Accuracy)</p>
+                            <p class="text-4xl font-black tracking-tight text-studio-success flex items-baseline">
+                                100<span class="text-xl font-bold ml-1">%</span>
+                            </p>
+                            <p class="text-xs text-studio-text/50 mt-2 font-medium">彻底消除人为干预失误</p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 模块三：核心业务价值 -->
+                <div class="glass-panel summary-card rounded-3xl p-8 flex flex-col border-studio-success/20">
+                    <div class="w-12 h-12 bg-green-50 text-studio-success rounded-2xl flex items-center justify-center mb-6 shadow-inner">
+                        <i data-lucide="trending-up" class="w-6 h-6"></i>
+                    </div>
+                    <h3 class="text-xl font-black text-studio-text mb-4">核心业务价值</h3>
+                    <div class="space-y-4 flex-grow flex flex-col justify-center">
+                        <p class="text-sm text-studio-text/70 leading-relaxed font-medium">
+                            彻底消灭了繁琐的手工介入节点，规避了版本号错误、配置漏配等致命风险。
+                        </p>
+                        <div class="bg-studio-surface p-5 rounded-2xl border border-studio-border/50 mt-4">
+                            <p class="text-[12px] font-bold text-studio-text/70 leading-relaxed">
+                                <span class="text-studio-text font-black text-sm block mb-2">最大价值：释放心智</span>
+                                开发人员终于可以从枯燥的“守屏幕盯进度”中彻底解脱，将宝贵的精力全部投入到更有价值的业务开发与创新中。
+                            </p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+        </section>
+
+    </main>
+
+    <footer class="max-w-7xl mx-auto px-6 py-8 text-center text-studio-text/20 text-[10px] font-bold uppercase tracking-[0.3em] font-mono">
+        QmanDreamer Agent UI // Build Automation v16
+    </footer>
+
+    <script>
+        // 初始化图标
+        lucide.createIcons();
+
+        // ================= 重构后的视图切换逻辑 (支持三个视图) =================
+        function switchView(targetView) {
+            const views = ['legacy', 'auto', 'summary'];
+            
+            // 定义每种视图按钮在激活时的样式配置
+            const btnConfigs = {
+                'legacy': { colorClass: 'text-studio-danger', icon: 'history', text: '纯手工历史' },
+                'auto': { colorClass: 'text-studio-accent', icon: 'sparkles', text: '全自动发布' },
+                'summary': { colorClass: 'text-studio-purple', icon: 'layout-dashboard', text: '项目总结' }
+            };
+
+            views.forEach(v => {
+                const viewEl = document.getElementById(`view-${v}`);
+                const btnEl = document.getElementById(`btn-${v}`);
+                const conf = btnConfigs[v];
+
+                if (v === targetView) {
+                    // 显示该视图
+                    viewEl.classList.remove('hidden-view');
+                    viewEl.classList.add('active-view');
+                    
+                    // 设置激活按钮的样式（带白色背景、阴影、特定高亮颜色）
+                    btnEl.className = `px-5 py-2 rounded-lg text-xs font-bold transition-all bg-white shadow-sm ${conf.colorClass} ring-1 ring-black/5 flex items-center`;
+                    btnEl.innerHTML = `<i data-lucide="${conf.icon}" class="w-3 h-3 mr-1.5"></i>${conf.text}`;
+                } else {
+                    // 隐藏该视图
+                    viewEl.classList.remove('active-view');
+                    viewEl.classList.add('hidden-view');
+                    
+                    // 设置非激活按钮的样式（透明背景、灰色文字）
+                    btnEl.className = `px-5 py-2 rounded-lg text-xs font-bold transition-all text-studio-text/50 hover:text-studio-text flex items-center`;
+                    btnEl.innerHTML = `<i data-lucide="${conf.icon}" class="w-3 h-3 mr-1.5"></i>${conf.text}`;
+                }
+            });
+            
+            // 重新渲染新注入的 Lucide 图标
+            lucide.createIcons();
+        }
+
+        // ================= 32项无限滚动渲染 =================
+        const full32Steps = [
+            "Git Checkout 同步代码", "Git Pull 远程更新", "清理 Unity 临时文件夹", "重启 Unity Editor 激活 LFS",
+            "手动设置 PlayerSettings 版本", "修改 Addressables 目标组", "执行 Clean Build 缓存", "等待 Unity 漫长资源重载",
+            "校验 ES3Type 生成表", "手动检查关键精模 Prefab", "点击 xLua Clean 按钮", "点击 xLua Generate 按钮",
+            "点击 xLua Inject 按钮", "处理 xLua 编译报错", "启动 Addressables 构建", "选择 UOS 对应的 Bucket",
+            "等待资源包上传至 UOS", "校验构建输出产物是否存在", "手动启动 Virbox 客户端", "输入云账号用户名密码",
+            "选择 QmanDreamer.ssp 配置", "手动指定加壳输入文件夹", "等待 WSL 后端加壳处理", "将输出产物重命名为版本号",
+            "启动 Hub 工程 Unity", "反射设置 BuildPath 指针", "手动点击打包逻辑按钮", "等待 Catalog 列表生成",
+            "校验 7z 压缩包完整性", "登录 UAS 命令行工具", "递归上传所有分片资源", "绑定版本 Badge 徽章"
+        ];
+        
+        const scrollContainer = document.getElementById('manual-scroller');
+        
+        function createStepNodes(arr) {
+            arr.forEach((step, i) => {
+                const stepNum = String(i + 1).padStart(2, '0');
+                const div = document.createElement('div');
+                div.className = "manual-step-card flex items-center justify-between p-4 rounded-xl cursor-default mx-2";
+                div.innerHTML = `
+                    <div class="flex items-center space-x-4">
+                        <span class="font-mono text-xs font-bold text-studio-danger/40 bg-studio-danger/5 px-2 py-1 rounded">STEP_${stepNum}</span>
+                        <span class="text-sm font-bold text-studio-text/80">${step}</span>
+                    </div>
+                    <i data-lucide="loader" class="w-4 h-4 text-studio-text/20"></i>
+                `;
+                scrollContainer.appendChild(div);
+            });
+        }
+        
+        // 渲染两遍以实现无缝衔接滚动
+        createStepNodes(full32Steps);
+        createStepNodes(full32Steps);
+
+        // ================= 自动化流水线逻辑 =================
+        let flowRunning = false;
+        const chatBox = document.getElementById('feishu-chat');
+        const progressLine = document.getElementById('line-progress');
+        const logBox = document.getElementById('diag-logs');
+        
+        const statusBadge = document.getElementById('pipeline-status');
+        const statusDot = document.getElementById('status-dot');
+        const statusText = document.getElementById('status-text');
+
+        const pipelineLogs = [
+            { stage: 1, text: "[系统] 执行 init_env.ps1，清理锁文件并同步 Git...", delay: 500 },
+            { stage: 1, text: "[成功] 环境初始化完毕，Unity 窗口已激活。", delay: 800 },
+            { stage: 2, text: "[引擎] 连接 MCP Bridge (:4567)，开始 Unity 构建...", delay: 600 },
+            { stage: 2, text: "[引擎] 依次执行 version_init, addressables, xlua, core_build...", delay: 1000 },
+            { stage: 2, text: "[成功] Qman Dreamer 可执行文件及资源编译成功。", delay: 800 },
+            { stage: 3, text: "[安全] 调用 WSL 加密 (Virbox Protector LM)...", delay: 700 },
+            { stage: 3, text: "[成功] Qman Dreamer_ss 输出成功，签名校验通过。", delay: 900 },
+            { stage: 4, text: "[打包] 启动 Hub 打包 (MCP Bridge :4568)...", delay: 600 },
+            { stage: 4, text: "[打包] 验证重命名文件夹，执行 OneClickPackaging...", delay: 1000 },
+            { stage: 4, text: "[成功] Catalog 生成，Hub 资源热更包打包完成。", delay: 500 },
+            { stage: 5, text: "[网络] 登录 UAS CLI，递归上传分片至 Bucket...", delay: 1200 },
+            { stage: 5, text: "[成功] Release 创建完成，Badge '2026_03_09' 绑定成功。", delay: 500 }
+        ];
+
+        function addChat(text, type='bot') {
+            const bubble = document.createElement('div');
+            if (type === 'bot') {
+                bubble.className = "chat-bubble bg-white text-studio-text self-start rounded-tl-sm border border-studio-border/40 ml-1";
+                bubble.innerHTML = text;
+            } else {
+                bubble.className = "chat-bubble bg-gradient-to-r from-studio-feishu to-blue-500 text-white self-end rounded-tr-sm ml-auto font-medium shadow-lg shadow-blue-500/20 mr-1";
+                bubble.innerText = text;
+            }
+            chatBox.appendChild(bubble);
+            chatBox.scrollTop = chatBox.scrollHeight;
+        }
+
+        function appendLog(text, isSuccess = false, isAction = false) {
+            const logDiv = document.createElement('div');
+            logDiv.className = "mb-1.5 opacity-0 flex font-mono";
+            
+            let colorClass = "text-[#a1a1aa]"; 
+            let prefix = "<span class='text-studio-accent/50 mr-2'>~</span>";
+            
+            if (text.includes("[OK]") || text.includes("[成功]") || isSuccess) {
+                colorClass = "text-[#27c93f]"; 
+                prefix = "<span class='text-[#27c93f] mr-2'>✔</span>";
+            } else if (text.includes("[MCP]") || text.includes("[系统]")) {
+                colorClass = "text-[#ffbd2e]"; 
+                prefix = "<span class='text-[#ffbd2e] mr-2'>⚙</span>";
+            } else if (isAction) {
+                colorClass = "text-white font-bold";
+                prefix = "<span class='text-white mr-2'>$</span>";
+            }
+
+            logDiv.innerHTML = `${prefix}<span class="${colorClass}">${text}</span>`;
+            logBox.appendChild(logDiv);
+            
+            requestAnimationFrame(() => {
+                logDiv.style.transition = "opacity 0.3s ease";
+                logDiv.style.opacity = "1";
+            });
+            
+            logBox.scrollTop = logBox.scrollHeight;
+        }
+
+        function updateStatus(state) {
+            if (state === 'running') {
+                statusBadge.className = "px-4 py-1.5 bg-blue-50/50 rounded-full text-[10px] font-black text-studio-accent border border-blue-200 shadow-sm flex items-center uppercase tracking-wider backdrop-blur-md";
+                statusDot.className = "w-1.5 h-1.5 rounded-full bg-studio-accent mr-2 animate-pulse";
+                statusText.innerText = "打包中...";
+            } else if (state === 'completed') {
+                statusBadge.className = "px-4 py-1.5 bg-green-50/50 rounded-full text-[10px] font-black text-studio-success border border-green-200 shadow-sm flex items-center uppercase tracking-wider backdrop-blur-md";
+                statusDot.className = "w-1.5 h-1.5 rounded-full bg-studio-success mr-2";
+                statusText.innerText = "已发布";
+            }
+        }
+
+        async function runAutomatedFlow() {
+            if(flowRunning) return;
+            flowRunning = true;
+            
+            const btn = document.getElementById('send-trigger');
+            btn.innerHTML = '<i data-lucide="loader-2" class="w-4 h-4 animate-spin"></i>';
+            lucide.createIcons();
+            
+            // 1. 触发
+            addChat("发布版本 2026.03.09", "user");
+            await new Promise(r => setTimeout(r, 800));
+            
+            // 2. 响应
+            addChat("收到指令！正在为您启动全自动出包流程，期间无需任何人工干预，请稍候...", "bot");
+            updateStatus('running');
+
+            // 3. 重置 UI
+            progressLine.style.width = "0%";
+            logBox.innerHTML = '';
+            appendLog('开始执行自动发布脚本：Version "2026.03.09"', false, true);
+            
+            for(let i=1; i<=5; i++) {
+                const node = document.getElementById(`n${i}`);
+                node.className = 'node-wrapper';
+                const iconMap = ['git-pull-request', 'box', 'shield-check', 'package-search', 'cloud-lightning'];
+                node.querySelector('.node-circle').innerHTML = `<i data-lucide="${iconMap[i-1]}" class="w-6 h-6"></i>`;
+            }
+            lucide.createIcons();
+
+            let currentStage = 0;
+
+            // 4. 执行流程
+            for(let i=0; i<pipelineLogs.length; i++){
+                const log = pipelineLogs[i];
+                
+                if (log.stage > currentStage) {
+                    if (currentStage > 0) {
+                        const prevNode = document.getElementById(`n${currentStage}`);
+                        prevNode.classList.remove('active');
+                        prevNode.classList.add('completed');
+                        prevNode.querySelector('.node-circle').innerHTML = `<i data-lucide="check" class="w-6 h-6 stroke-[3]"></i>`;
+                        lucide.createIcons();
+                    }
+                    
+                    currentStage = log.stage;
+                    const targetPercent = ((currentStage - 1) / 4) * 100;
+                    progressLine.style.width = `${targetPercent}%`;
+                    
+                    const currNode = document.getElementById(`n${currentStage}`);
+                    currNode.classList.add('active');
+
+                    if (currentStage > 1) {
+                        fireEnergyParticle(currentStage - 1, currentStage);
+                    }
+                }
+
+                appendLog(log.text);
+                await new Promise(r => setTimeout(r, log.delay));
+            }
+
+            // 结束
+            const lastNode = document.getElementById(`n5`);
+            lastNode.classList.remove('active');
+            lastNode.classList.add('completed');
+            lastNode.querySelector('.node-circle').innerHTML = `<i data-lucide="check" class="w-6 h-6 stroke-[3]"></i>`;
+            progressLine.style.width = `100%`;
+            lucide.createIcons();
+
+            updateStatus('completed');
+            appendLog('所有自动化流程执行完毕，零错误。', true, true);
+            await new Promise(r => setTimeout(r, 500));
+            addChat("🎉 报告！<br><br>版本 <b>2026.03.09</b> 已经全部自动打包并上传完毕。<br><br><span class='text-xs text-studio-text/50'>本次发布：0次手工介入，成功率 100%</span>", "bot");
+            
+            btn.innerHTML = '<i data-lucide="send" class="w-4 h-4 group-hover/btn:translate-x-0.5 group-hover/btn:-translate-y-0.5 transition-transform"></i>';
+            lucide.createIcons();
+            flowRunning = false;
+        }
+
+        // 能量粒子动画
+        function fireEnergyParticle(startStage, endStage) {
+            const container = document.getElementById('particle-container');
+            const particle = document.createElement('div');
+            particle.className = "energy-particle";
+            
+            const startX = ((startStage - 1) / 4) * 100;
+            const endX = ((endStage - 1) / 4) * 100;
+            
+            particle.style.left = `calc(${startX}% + 28px)`; 
+            container.appendChild(particle);
+
+            particle.animate([
+                { left: `calc(${startX}% + 28px)`, opacity: 0, transform: 'scale(0.5)' },
+                { opacity: 1, transform: 'scale(1)', offset: 0.1 },
+                { opacity: 1, transform: 'scale(1)', offset: 0.9 },
+                { left: `calc(${endX}% + 28px)`, opacity: 0, transform: 'scale(0.5)' }
+            ], {
+                duration: 800,
+                easing: 'cubic-bezier(0.4, 0, 0.2, 1)'
+            }).onfinish = () => particle.remove();
+        }
+        
+        setTimeout(() => lucide.createIcons(), 100);
+    </script>
+</body>
+</html>

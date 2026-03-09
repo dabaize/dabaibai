@@ -1,0 +1,518 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>QmanDreamer：从“枷锁”到“自由”的发布演进</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        brand: {
+                            blue: '#2563eb',
+                            green: '#10b981',
+                            red: '#ef4444',
+                            slate: '#64748b',
+                            gold: '#f59e0b',
+                            dark: '#0f172a'
+                        }
+                    },
+                    animation: {
+                        'slow-scroll': 'scroll-list 45s linear infinite',
+                        'ping-slow': 'ping-custom 3s cubic-bezier(0, 0, 0.2, 1) infinite',
+                        'float': 'float 3s ease-in-out infinite'
+                    },
+                    keyframes: {
+                        'scroll-list': {
+                            '0%': { transform: 'translateY(0)' },
+                            '100%': { transform: 'translateY(-50%)' }
+                        },
+                        'float': {
+                            '0%, 100%': { transform: 'translateY(0)' },
+                            '50%': { transform: 'translateY(-10px)' }
+                        },
+                        'ping-custom': {
+                            '0%': { transform: 'scale(1)', opacity: '0.8' },
+                            '100%': { transform: 'scale(2)', opacity: '0' }
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;700;900&display=swap');
+        body { font-family: 'Noto Sans SC', sans-serif; }
+
+        .chart-container {
+            position: relative;
+            width: 100%;
+            max-width: 600px;
+            margin: 0 auto;
+            height: 300px;
+        }
+
+        .glass-card {
+            background: rgba(255, 255, 255, 0.95);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(226, 232, 240, 1);
+            border-radius: 2rem;
+            box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.05);
+        }
+
+        .path-active-glow {
+            box-shadow: 0 0 20px rgba(37, 99, 235, 0.5);
+        }
+
+        .scrollbar-hide::-webkit-scrollbar { display: none; }
+        .win-dot { width: 10px; height: 10px; border-radius: 50%; }
+    </style>
+</head>
+<body class="bg-slate-50 text-slate-900 min-h-screen overflow-x-hidden">
+
+    <!-- 顶部导航 -->
+    <nav class="sticky top-0 z-50 bg-white/80 backdrop-blur-lg border-b border-slate-200">
+        <div class="max-w-7xl mx-auto px-6 py-4 flex justify-between items-center">
+            <div class="flex items-center space-x-2">
+                <span class="text-2xl">☕</span>
+                <h1 class="text-xl font-black tracking-tight text-slate-800 uppercase">QmanDreamer Evolution</h1>
+            </div>
+            <div class="flex items-center space-x-4 md:space-x-8 text-[10px] font-black uppercase tracking-widest text-slate-400">
+                <div class="flex items-center space-x-2"><span class="w-2 h-2 rounded-full bg-brand-red"></span><span>32 手动步骤</span></div>
+                <div class="flex items-center space-x-2"><span class="w-2 h-2 rounded-full bg-brand-green"></span><span>1 条自动指令</span></div>
+            </div>
+        </div>
+    </nav>
+
+    <main class="max-w-7xl mx-auto px-6 py-12 space-y-24">
+
+        <!-- 第一部分：交互视窗对比 (V10 架构) -->
+        <section class="grid grid-cols-1 lg:grid-cols-2 gap-10 items-stretch">
+            
+            <!-- 左侧：手动流程视窗 (浅色) -->
+            <div class="glass-card p-8 flex flex-col h-full bg-white transition-all duration-500 hover:shadow-xl">
+                <div class="flex items-center space-x-2 mb-6 border-b pb-4">
+                    <div class="win-dot bg-red-400"></div>
+                    <div class="win-dot bg-yellow-400"></div>
+                    <div class="win-dot bg-green-400"></div>
+                    <span class="ml-4 text-[10px] font-mono text-slate-400 italic tracking-widest uppercase">Manual_Mode_2024.exe</span>
+                </div>
+                
+                <div class="mb-6 px-2">
+                    <h2 class="text-2xl font-black text-slate-800 tracking-tight">2024：手动枷锁</h2>
+                    <p class="text-slate-400 text-xs mt-1 font-medium">负责人需锁定在特定环境，执行 32 个破碎节点</p>
+                </div>
+
+                <!-- 滚动清单 -->
+                <div class="relative flex-grow bg-slate-50 rounded-3xl border border-slate-200 overflow-hidden h-[420px]">
+                    <div class="absolute inset-x-0 top-0 h-16 bg-gradient-to-b from-slate-50 to-transparent z-10"></div>
+                    <div class="animate-slow-scroll p-6 space-y-3">
+                        <div class="p-3 bg-white rounded-xl border border-slate-200 text-[11px] font-bold text-slate-600 flex justify-between shadow-sm"><span>[步骤 1] 还原所有 Git 修改文件</span> <span class="text-brand-red">等待操作</span></div>
+                        <div class="p-3 bg-white rounded-xl border border-slate-200 text-[11px] font-bold text-slate-600 flex justify-between shadow-sm"><span>[步骤 2] Unity 重载项目资源</span> <span class="text-brand-red">等待点击</span></div>
+                        <div class="p-3 bg-red-50 rounded-xl border border-red-200 text-[11px] font-black text-brand-red flex justify-between"><span>[步骤 3] ⚠️ 核对精模文件命名</span> <span>必须人工介入</span></div>
+                        <div class="p-3 bg-white rounded-xl border border-slate-200 text-[11px] font-bold text-slate-600 flex justify-between shadow-sm"><span>[步骤 4] 校验 ES3Type 合法性</span> <span class="text-brand-red">等待确认</span></div>
+                        <div class="p-3 bg-orange-50 rounded-xl border border-orange-200 text-[11px] font-black text-orange-600 flex justify-between"><span>[步骤 5] ⏳ Addressable 漫长构建</span> <span>电脑禁止操作</span></div>
+                        <div class="p-3 bg-white rounded-xl border border-slate-200 text-[11px] font-bold text-slate-600 flex justify-between shadow-sm"><span>[步骤 6] 加载 UOS 桶设置徽章</span> <span class="text-brand-red">等待选择</span></div>
+                        <div class="p-3 bg-white rounded-xl border border-slate-200 text-[11px] font-bold text-slate-600 flex justify-between shadow-sm"><span>[步骤 7] 清理并生成适配代码</span> <span class="text-brand-red">等待确认</span></div>
+                        <div class="p-3 bg-white rounded-xl border border-slate-200 text-[11px] font-bold text-slate-600 flex justify-between shadow-sm"><span>[步骤 8] 手动注入脚本 Hotfix</span> <span class="text-brand-red">等待点击</span></div>
+                        <div class="p-3 bg-red-50 rounded-xl border border-red-200 text-[11px] font-black text-brand-red flex justify-between"><span>[步骤 9] ⚠️ 登录 Virbox 输入API</span> <span>高频失误点</span></div>
+                        <!-- 重复循环内容 -->
+                        <div class="p-3 bg-white rounded-xl border border-slate-200 text-[11px] font-bold text-slate-600 flex justify-between"><span>[步骤 1] 还原所有 Git 修改文件</span> <span class="text-brand-red">等待操作</span></div>
+                    </div>
+                    <div class="absolute inset-x-0 bottom-0 h-16 bg-gradient-to-t from-slate-50 to-transparent z-10"></div>
+                </div>
+
+                <div class="mt-6 flex items-center space-x-3 px-2">
+                    <div class="w-10 h-10 rounded-full bg-slate-200 flex items-center justify-center text-xl">👤</div>
+                    <div class="text-[10px]">
+                        <p class="font-black text-slate-800">版本发布负责人</p>
+                        <p class="text-slate-400 font-bold uppercase tracking-tight">状态：被琐事缠身 / 无法离岗</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 右侧：自动化流程视窗 (深色优化) -->
+            <div class="glass-card p-8 flex flex-col h-full bg-brand-dark border-brand-green/30 transition-all duration-500 hover:shadow-[0_20px_50px_rgba(16,185,129,0.1)] shadow-2xl">
+                <div class="flex items-center space-x-2 mb-6 border-b border-white/10 pb-4">
+                    <div class="win-dot bg-brand-green"></div>
+                    <div class="win-dot bg-brand-blue"></div>
+                    <div class="win-dot bg-slate-700"></div>
+                    <span class="ml-4 text-[10px] font-mono text-brand-green font-black italic tracking-widest uppercase">Automated_Flow_2026.app</span>
+                </div>
+
+                <div class="mb-6 px-2">
+                    <h2 class="text-2xl font-black text-white tracking-tight">2026：智能工坊</h2>
+                    <p class="text-brand-green/70 text-xs mt-1 font-bold italic">指令下达即离开，系统静默完成交付</p>
+                </div>
+
+                <div class="grid grid-cols-1 gap-5 flex-grow">
+                    <!-- 飞书对话框 -->
+                    <div class="bg-black/40 rounded-3xl p-5 border border-white/10 flex flex-col h-[230px]">
+                        <div class="text-[9px] font-black text-white/30 uppercase mb-3 tracking-widest flex items-center">
+                            <span class="w-2 h-2 rounded-full bg-brand-blue mr-2 animate-pulse"></span> 指令中心 (飞书 Bot)
+                        </div>
+                        <div id="chat-ui" class="flex-grow space-y-3 overflow-y-auto scrollbar-hide">
+                            <!-- JS 动态注入消息 -->
+                        </div>
+                    </div>
+
+                    <!-- 物理路径追踪 -->
+                    <div class="bg-slate-900/80 rounded-3xl p-6 relative overflow-hidden h-[190px] flex flex-col justify-center border border-white/5">
+                        <div class="absolute top-4 left-6 text-[9px] font-black text-brand-green/40 uppercase tracking-widest">物理路径实时追踪</div>
+                        
+                        <!-- 水平路径 -->
+                        <div class="relative w-full flex justify-between items-center px-4">
+                            <!-- 轨道背景线 -->
+                            <div class="absolute top-1/2 left-0 w-full h-0.5 bg-white/5 -translate-y-1/2"></div>
+                            
+                            <!-- 节点 1 -->
+                            <div class="relative z-10 flex flex-col items-center">
+                                <div id="node-1" class="w-10 h-10 bg-slate-800 border border-white/10 rounded-xl flex items-center justify-center text-lg transition-all duration-700 text-white/20">💻</div>
+                                <div class="text-center mt-2">
+                                    <p class="text-[7px] text-white/40 font-mono">D:\SOURCE</p>
+                                    <p id="label-1" class="text-[6px] text-white/10 font-mono mt-0.5 tracking-tighter uppercase">WAITING</p>
+                                </div>
+                            </div>
+
+                            <!-- 连线 1 -->
+                            <div class="absolute top-1/2 left-[18%] w-[15%] h-0.5 bg-white/5 -translate-y-1/2 overflow-hidden">
+                                <div id="line-1" class="h-full bg-brand-blue w-0 transition-all duration-1000 shadow-[0_0_8px_#2563eb]"></div>
+                            </div>
+
+                            <!-- 节点 2 -->
+                            <div class="relative z-10 flex flex-col items-center">
+                                <div id="node-2" class="w-10 h-10 bg-slate-800 border border-white/10 rounded-xl flex items-center justify-center text-lg transition-all duration-700 text-white/20">⚙️</div>
+                                <div class="text-center mt-2">
+                                    <p class="text-[7px] text-white/40 font-mono">UNITY_MCP</p>
+                                    <p id="label-2" class="text-[6px] text-white/10 font-mono mt-0.5 tracking-tighter uppercase">WAITING</p>
+                                </div>
+                            </div>
+
+                            <!-- 连线 2 -->
+                            <div class="absolute top-1/2 left-[45%] w-[15%] h-0.5 bg-white/5 -translate-y-1/2 overflow-hidden">
+                                <div id="line-2" class="h-full bg-brand-blue w-0 transition-all duration-1000 shadow-[0_0_8px_#2563eb]"></div>
+                            </div>
+
+                            <!-- 节点 3 -->
+                            <div class="relative z-10 flex flex-col items-center">
+                                <div id="node-3" class="w-10 h-10 bg-slate-800 border border-white/10 rounded-xl flex items-center justify-center text-lg transition-all duration-700 text-white/20">🛡️</div>
+                                <div class="text-center mt-2">
+                                    <p class="text-[7px] text-white/40 font-mono">WSL_VIRBOX</p>
+                                    <p id="label-3" class="text-[6px] text-white/10 font-mono mt-0.5 tracking-tighter uppercase">WAITING</p>
+                                </div>
+                            </div>
+
+                            <!-- 连线 3 -->
+                            <div class="absolute top-1/2 left-[70%] w-[15%] h-0.5 bg-white/5 -translate-y-1/2 overflow-hidden">
+                                <div id="line-3" class="h-full bg-brand-blue w-0 transition-all duration-1000 shadow-[0_0_8px_#2563eb]"></div>
+                            </div>
+
+                            <!-- 节点 4 -->
+                            <div class="relative z-10 flex flex-col items-center">
+                                <div id="node-4" class="w-10 h-10 bg-slate-800 border border-white/10 rounded-xl flex items-center justify-center text-lg transition-all duration-700 text-white/20">☁️</div>
+                                <div class="text-center mt-2">
+                                    <p class="text-[7px] text-white/40 font-mono">UAS_CDN</p>
+                                    <p id="label-4" class="text-[6px] text-white/10 font-mono mt-0.5 tracking-tighter uppercase">WAITING</p>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div id="status-indicator" class="absolute bottom-4 right-6 text-[8px] font-mono text-brand-green/20 font-black italic tracking-widest">
+                            SYSTEM_IDLE_READY
+                        </div>
+                    </div>
+                </div>
+
+                <div class="mt-6 flex items-center space-x-3 px-2">
+                    <div class="w-10 h-10 rounded-full bg-white/5 border border-white/10 flex items-center justify-center text-xl animate-float">😎</div>
+                    <div class="text-[10px]">
+                        <p class="font-black text-white">研发团队成员</p>
+                        <p class="text-brand-green font-black uppercase tracking-tight">状态：自由呼吸 / 在忙别的</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- 第二部分：成果量化 (采用 V1 UI 样式) -->
+        <section class="glass-card p-10 bg-white">
+            <div class="text-center mb-12">
+                <h3 class="text-3xl font-black text-slate-900 tracking-tight">成果量化：不仅仅是变快了</h3>
+                <p class="text-slate-400 mt-2 font-medium">从繁琐的“流程守卫”转变为高效的“自动化监管”</p>
+            </div>
+
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-8 items-center">
+                <!-- 统计项 1 -->
+                <div class="text-center md:border-r border-slate-100 p-4">
+                    <p class="text-xs font-black text-slate-400 uppercase mb-4 tracking-widest">手动干预步骤</p>
+                    <div class="flex items-center justify-center space-x-4">
+                        <span class="text-5xl font-black text-brand-gold">30+</span>
+                        <span class="text-2xl text-slate-200">➜</span>
+                        <span class="text-5xl font-black text-brand-blue">1</span>
+                    </div>
+                    <p class="text-[10px] text-slate-400 mt-6 leading-relaxed font-bold italic">不再需要逐个点击验证、构建、上传窗口</p>
+                </div>
+                
+                <!-- 图表 -->
+                <div class="p-4">
+                    <div class="chart-container">
+                        <canvas id="interactionChart"></canvas>
+                    </div>
+                </div>
+
+                <!-- 统计项 2 -->
+                <div class="text-center md:border-l border-slate-100 p-4">
+                    <p class="text-xs font-black text-slate-400 uppercase mb-4 tracking-widest">容错能力提升</p>
+                    <p class="text-6xl font-black text-brand-green">100%</p>
+                    <p class="text-[10px] text-slate-400 mt-6 leading-relaxed font-bold italic">机器执行确保参数一致性，彻底消除人为失误</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- 第三部分：背后的“超能力” (采用 V1 UI 样式) -->
+        <section class="grid grid-cols-1 lg:grid-cols-2 gap-10">
+            <!-- 技术特色卡片 -->
+            <div class="flex flex-col justify-center space-y-8">
+                <h4 class="text-2xl font-black text-slate-900 tracking-tight">背后的“超能力”</h4>
+                
+                <div class="space-y-6">
+                    <div class="flex items-start space-x-5">
+                        <div class="bg-blue-100 p-3 rounded-2xl text-xl shadow-sm border border-blue-200/50">🏠</div>
+                        <div>
+                            <h5 class="font-black text-slate-800 text-sm tracking-tight">环境解耦 (WSL2 + MCP)</h5>
+                            <p class="text-[11px] text-slate-500 mt-1 leading-relaxed">不再被“会议室电脑”绑架。通过本地 HTTP Bridge 驱动 Unity，在任何地方都能发布。</p>
+                        </div>
+                    </div>
+                    <div class="flex items-start space-x-5">
+                        <div class="bg-green-100 p-3 rounded-2xl text-xl shadow-sm border border-green-200/50">🤖</div>
+                        <div>
+                            <h5 class="font-black text-slate-800 text-sm tracking-tight">全流程无人值守</h5>
+                            <p class="text-[11px] text-slate-500 mt-1 leading-relaxed">从 Git 同步、代码注入、资源构建到 Virbox 加壳、CDN 上传，流水线自动处理所有异常重试。</p>
+                        </div>
+                    </div>
+                    <div class="flex items-start space-x-5">
+                        <div class="bg-purple-100 p-3 rounded-2xl text-xl shadow-sm border border-purple-200/50">📱</div>
+                        <div>
+                            <h5 class="font-black text-slate-800 text-sm tracking-tight">极致触发体验</h5>
+                            <p class="text-[11px] text-slate-500 mt-1 leading-relaxed">无需打开 Unity 界面。命令行或飞书消息，即可驱动整个复杂的后端系统。</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 禅意总结盒 (采用 V1 UI 样式) -->
+            <div class="bg-brand-dark rounded-[2.5rem] p-12 flex flex-col items-center justify-center text-center relative overflow-hidden shadow-2xl">
+                <!-- 背景动效 -->
+                <div class="absolute inset-0 opacity-10 flex items-center justify-center pointer-events-none">
+                    <div class="w-96 h-96 border-4 border-white rounded-full animate-ping-slow"></div>
+                </div>
+                
+                <div class="relative z-10 space-y-6">
+                    <div class="text-7xl mb-2 animate-float">☕</div>
+                    <h4 class="text-2xl font-black text-white tracking-tight">现在发布版本时</h4>
+                    <p class="text-slate-400 text-sm max-w-xs mx-auto leading-relaxed">
+                        您可以去泡杯咖啡，或者开一个更有意义的会
+                    </p>
+                    <div class="pt-6">
+                        <div class="inline-block px-10 py-3 bg-white/5 text-white/50 font-black rounded-full text-[10px] uppercase tracking-widest border border-white/10 backdrop-blur-sm">
+                            QmanDreamer 已实现自动化交付
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+    </main>
+
+    <footer class="max-w-7xl mx-auto px-6 py-12 text-center border-t border-slate-200 text-slate-400 text-[10px] font-black uppercase tracking-widest">
+        内部成果演示报告 · 严禁外泄 · 2026 技术演进
+    </footer>
+
+    <!-- JavaScript: 业务逻辑与数据驱动 -->
+    <script>
+        // --- 模拟自动化演示数据 ---
+        const botMessages = [
+            { sender: 'user', text: '指令：发布 QmanDreamer 2026.3.0 正式版本' },
+            { sender: 'bot', text: '👌 收到，环境感知中... Stage 1 初始化完毕。' },
+            { sender: 'bot', text: '接入 Unity MCP Bridge，资产自动构建中 (Stage 2)...' },
+            { sender: 'bot', text: '加固流程启动，正在通过 WSL 加密代码资产 (Stage 3)...' },
+            { sender: 'bot', text: '🎉 交付成功！2026.3.0 已上线 CDN 并自动绑定版本徽章。' }
+        ];
+
+        let msgIdx = 0;
+        const chatUI = document.getElementById('chat-ui');
+
+        function runAutoDemo() {
+            if (msgIdx >= botMessages.length) {
+                setTimeout(() => {
+                    resetAuto();
+                    runAutoDemo();
+                }, 6000);
+                return;
+            }
+
+            const m = botMessages[msgIdx];
+            const div = document.createElement('div');
+            div.className = `flex ${m.sender === 'user' ? 'justify-end' : 'justify-start'} animate-fade-in`;
+            div.style.animation = 'fadeIn 0.5s ease-out forwards';
+            div.innerHTML = `
+                <div class="${m.sender === 'user' ? 'bg-brand-blue text-white shadow-lg' : 'bg-white/10 text-white/80 border border-white/10'} px-4 py-2 rounded-2xl text-[9px] max-w-[85%] font-black shadow-sm">
+                    ${m.text}
+                </div>
+            `;
+            chatUI.appendChild(div);
+            chatUI.scrollTop = chatUI.scrollHeight;
+
+            updatePipeline(msgIdx);
+
+            msgIdx++;
+            setTimeout(runAutoDemo, 2500);
+        }
+
+        function updatePipeline(idx) {
+            const statusLabel = document.getElementById('status-indicator');
+            if (!statusLabel) return;
+
+            if (idx === 0) {
+                const node = document.getElementById('node-1');
+                const label = document.getElementById('label-1');
+                if (node) {
+                    node.className = "w-10 h-10 bg-brand-blue border border-brand-blue text-white rounded-xl flex items-center justify-center text-lg shadow-xl path-active-glow scale-110 transition-all duration-700";
+                }
+                if (label) {
+                    label.innerText = "READY";
+                    label.className = "text-[6px] text-brand-blue font-bold uppercase mt-1";
+                }
+                statusLabel.innerText = "INITIALIZING";
+            } else if (idx === 2) {
+                const node = document.getElementById('node-2');
+                const label = document.getElementById('label-2');
+                const line = document.getElementById('line-1');
+                if (line) line.style.width = '100%';
+                if (node) {
+                    node.className = "w-10 h-10 bg-brand-blue border border-brand-blue text-white rounded-xl flex items-center justify-center text-lg shadow-xl path-active-glow scale-110 transition-all duration-700";
+                }
+                if (label) {
+                    label.innerText = "BUILDING";
+                    label.className = "text-[6px] text-brand-blue font-bold uppercase mt-1";
+                }
+                statusLabel.innerText = "CORE_BUILDING";
+            } else if (idx === 3) {
+                const node = document.getElementById('node-3');
+                const label = document.getElementById('label-3');
+                const line = document.getElementById('line-2');
+                if (line) line.style.width = '100%';
+                if (node) {
+                    node.className = "w-10 h-10 bg-brand-blue border border-brand-blue text-white rounded-xl flex items-center justify-center text-lg shadow-xl path-active-glow scale-110 transition-all duration-700";
+                }
+                if (label) {
+                    label.innerText = "SHIELDED";
+                    label.className = "text-[6px] text-brand-blue font-bold uppercase mt-1";
+                }
+                statusLabel.innerText = "ENCRYPTING";
+            } else if (idx === 4) {
+                const node = document.getElementById('node-4');
+                const label = document.getElementById('label-4');
+                const line = document.getElementById('line-3');
+                if (line) line.style.width = '100%';
+                if (node) {
+                    node.className = "w-10 h-10 bg-brand-green border border-brand-green text-white rounded-xl flex items-center justify-center text-lg shadow-xl shadow-brand-green/30 scale-110 transition-all duration-700";
+                }
+                if (label) {
+                    label.innerText = "ONLINE";
+                    label.className = "text-[6px] text-brand-green font-bold uppercase mt-1";
+                }
+                statusLabel.innerText = "DONE_SUCCESSFUL";
+                statusLabel.className = "absolute bottom-4 right-6 text-[8px] font-mono text-brand-green font-black animate-pulse tracking-widest";
+            }
+        }
+
+        function resetAuto() {
+            msgIdx = 0;
+            chatUI.innerHTML = '';
+            for (let i = 1; i <= 4; i++) {
+                const node = document.getElementById(`node-${i}`);
+                const label = document.getElementById(`label-${i}`);
+                if (node) {
+                    node.className = "w-10 h-10 bg-slate-800 border border-white/10 rounded-xl flex items-center justify-center text-lg transition-all duration-500 text-white/20";
+                }
+                if (label) {
+                    label.innerText = "WAITING";
+                    label.className = "text-[6px] text-white/10 font-mono mt-0.5 tracking-tighter uppercase";
+                }
+                if (i < 4) {
+                    const line = document.getElementById(`line-${i}`);
+                    if (line) line.style.width = '0%';
+                }
+            }
+            const statusLabel = document.getElementById('status-indicator');
+            if (statusLabel) {
+                statusLabel.innerText = "WAITING_COMMAND...";
+                statusLabel.className = "absolute bottom-4 right-6 text-[8px] font-mono text-brand-green/30 font-black italic tracking-widest";
+            }
+        }
+
+        // --- 图表初始化 (柱状图) ---
+        function initCharts() {
+            const ctx = document.getElementById('interactionChart').getContext('2d');
+            new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels: ['人工交互次数', '关键决策点 (个)'],
+                    datasets: [
+                        {
+                            label: '2024 手动时代',
+                            data: [32, 15],
+                            backgroundColor: 'rgba(245, 158, 11, 0.7)',
+                            borderRadius: 6,
+                            barThickness: 35
+                        },
+                        {
+                            label: '2026 自动时代',
+                            data: [1, 1],
+                            backgroundColor: 'rgba(37, 99, 235, 0.7)',
+                            borderRadius: 6,
+                            barThickness: 35
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        y: { 
+                            beginAtZero: true, 
+                            grid: { display: false },
+                            ticks: { display: false }
+                        },
+                        x: { 
+                            grid: { display: false },
+                            ticks: { font: { weight: 'black', size: 10 } }
+                        }
+                    },
+                    plugins: {
+                        legend: { position: 'top', labels: { font: { size: 10, weight: 'bold' }, boxWidth: 10 } }
+                    }
+                }
+            });
+        }
+
+        window.onload = () => {
+            initCharts();
+            runAutoDemo();
+        };
+
+    </script>
+
+    <style>
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+    </style>
+</body>
+</html>
