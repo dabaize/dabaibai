@@ -95,15 +95,15 @@
     <input type="file" id="excel-upload" accept=".xlsx, .xls, .csv" class="hidden" onchange="handleExcelUpload(event)">
 
     <!-- Mobile Header -->
-    <header class="md:hidden flex items-center justify-between px-5 py-3 glass-panel border-b border-white/50 z-30 shrink-0 relative">
+    <header class="md:hidden flex items-center justify-between px-4 py-2.5 glass-panel border-b border-white/50 z-30 shrink-0 relative">
         <div class="flex items-center gap-2">
             <div class="w-8 h-8 rounded-lg bg-slate-900 flex items-center justify-center text-white">
                 <i data-lucide="layers" class="w-4 h-4"></i>
             </div>
             <h1 class="font-black tracking-tight text-base leading-none">WMS Pro</h1>
         </div>
-        <button onclick="toggleSidebar()" class="w-10 h-10 flex items-center justify-center bg-white rounded-full shadow-sm border border-slate-200 text-slate-600">
-            <i data-lucide="menu" class="w-5 h-5"></i>
+        <button onclick="toggleSidebar()" class="w-9 h-9 flex items-center justify-center bg-white rounded-full shadow-sm border border-slate-200 text-slate-600">
+            <i data-lucide="menu" class="w-4 h-4"></i>
         </button>
     </header>
 
@@ -111,7 +111,7 @@
     <div id="sidebar-overlay" class="fixed inset-0 bg-slate-900/20 backdrop-blur-sm z-40 hidden opacity-0 transition-opacity duration-300 md:hidden" onclick="toggleSidebar()"></div>
 
     <!-- SIDEBAR -->
-    <aside id="sidebar" class="fixed md:relative inset-y-0 left-0 transform -translate-x-full md:translate-x-0 transition-transform duration-500 ease-spring z-50 w-80 h-full md:h-[calc(100dvh-2rem)] glass-panel border-r border-white/50 flex flex-col shrink-0 md:rounded-[2rem] md:my-4 md:ml-4 shadow-2xl md:shadow-glass">
+    <aside id="sidebar" class="fixed md:relative inset-y-0 left-0 transform -translate-x-full md:translate-x-0 transition-transform duration-500 ease-spring z-50 w-80 h-full md:h-[calc(100dvh-4rem)] glass-panel border-r border-white/50 flex flex-col shrink-0 md:rounded-[2rem] md:my-8 md:ml-6 shadow-2xl md:shadow-glass">
         <div class="hidden md:flex p-6 pb-4 items-center gap-3">
             <div class="w-10 h-10 rounded-xl bg-slate-900 flex items-center justify-center text-white shadow-lg shadow-slate-900/20">
                 <i data-lucide="layers" class="w-5 h-5"></i>
@@ -133,8 +133,9 @@
     </aside>
 
     <!-- MAIN CONTENT -->
-    <main id="main-area" class="flex-1 h-full flex flex-col p-2 md:p-4 relative z-10 overflow-hidden">
-        <section id="dashboard-container" class="flex-1 w-full h-full overflow-y-auto no-scrollbar md:overflow-hidden relative">
+    <main id="main-area" class="flex-1 h-full flex flex-col p-2 md:p-6 relative z-10 overflow-hidden">
+        <!-- Dashboard Container enforces strict single screen boundaries -->
+        <section id="dashboard-container" class="flex-1 w-full h-full overflow-hidden relative">
             <!-- Content injected by JS -->
         </section>
     </main>
@@ -147,7 +148,7 @@
             "主板": "https://cdn-icons-png.flaticon.com/512/900/900618.png",
             "芯片": "https://cdn-icons-png.flaticon.com/512/2897/2897785.png",
             "轴承": "https://cdn-icons-png.flaticon.com/512/2072/2072800.png",
-            "积木": "https://cdn-icons-png.flaticon.com/512/10398/10398144.png" // 通用积木图标
+            "积木": "https://cdn-icons-png.flaticon.com/512/10398/10398144.png"
         };
 
         const PARTS_DB = [
@@ -215,7 +216,6 @@
             const container = document.getElementById('part-3d-viewer');
             if(!container) return;
 
-            // 清理上一轮动画和渲染，防止内存泄漏
             if(current3DAnimId) cancelAnimationFrame(current3DAnimId);
             if(currentRenderer) {
                 currentRenderer.dispose();
@@ -224,8 +224,10 @@
 
             const scene = new THREE.Scene();
             
-            const camera = new THREE.PerspectiveCamera(45, container.clientWidth / container.clientHeight, 0.1, 100);
-            camera.position.set(0, 3, 5);
+            // 【移动端特殊适配】：在手机端将摄像机大幅拉近，以更清晰地展示颗粒模型
+            const isMobile = window.innerWidth < 768;
+            const camera = new THREE.PerspectiveCamera(isMobile ? 35 : 40, container.clientWidth / container.clientHeight, 0.1, 100);
+            camera.position.set(0, isMobile ? 1.2 : 2.0, isMobile ? 2.2 : 3.5); 
 
             const renderer = new THREE.WebGLRenderer({ alpha: true, antialias: true });
             renderer.setSize(container.clientWidth, container.clientHeight);
@@ -237,27 +239,24 @@
             controls.enableDamping = true;
             controls.enableZoom = true;
             controls.autoRotate = true;
-            controls.autoRotateSpeed = 3.0;
+            controls.autoRotateSpeed = 4.0;
             currentSceneControls = controls;
 
-            // 柔和科幻打光
-            const ambientLight = new THREE.AmbientLight(0xffffff, 0.7);
+            const ambientLight = new THREE.AmbientLight(0xffffff, 0.8);
             scene.add(ambientLight);
-            const dirLight = new THREE.DirectionalLight(0xffffff, 0.8);
+            const dirLight = new THREE.DirectionalLight(0xffffff, 0.9);
             dirLight.position.set(5, 10, 7);
             scene.add(dirLight);
-            const backLight = new THREE.DirectionalLight(0xffffff, 0.4);
+            const backLight = new THREE.DirectionalLight(0xffffff, 0.5);
             backLight.position.set(-5, 5, -7);
             scene.add(backLight);
 
-            // 工业材质库
             const silverMat = new THREE.MeshStandardMaterial({ color: 0xe2e8f0, metalness: 0.8, roughness: 0.2 });
             const darkMat = new THREE.MeshStandardMaterial({ color: 0x334155, metalness: 0.6, roughness: 0.4 });
             const pcbMat = new THREE.MeshStandardMaterial({ color: 0x10b981, metalness: 0.2, roughness: 0.8 });
 
             const group = new THREE.Group();
 
-            // 核心功能：根据零件类型程序化生成对应的 3D 几何形态
             if (type === "螺丝") {
                 const head = new THREE.Mesh(new THREE.CylinderGeometry(0.8, 0.8, 0.4, 32), silverMat);
                 head.position.y = 1;
@@ -316,14 +315,12 @@
                     group.add(ball);
                 }
             } else { 
-                // 默认生成积木颗粒 (针对 Excel 中导入的未知启蒙件名称)
                 const colors = [0xf59e0b, 0x3b82f6, 0xef4444, 0x10b981];
                 const randomColor = colors[Math.floor(Math.random() * colors.length)];
                 const brickMat = new THREE.MeshStandardMaterial({ color: randomColor, metalness: 0.1, roughness: 0.2 });
                 
                 const body = new THREE.Mesh(new THREE.BoxGeometry(2, 1.2, 1), brickMat);
                 group.add(body);
-                // 添加顶部的2个凸起
                 for(let i of [-0.5, 0.5]) {
                     const stud = new THREE.Mesh(new THREE.CylinderGeometry(0.3, 0.3, 0.4, 16), brickMat);
                     stud.position.set(i, 0.7, 0);
@@ -331,7 +328,6 @@
                 }
             }
 
-            // 居中模型
             new THREE.Box3().setFromObject(group).getCenter(group.position).multiplyScalar(-1);
             scene.add(group);
 
@@ -342,7 +338,6 @@
             };
             animate();
 
-            // 响应容器大小调整
             const resizeObserver = new ResizeObserver(() => {
                 if (container.clientWidth > 0 && container.clientHeight > 0) {
                     camera.aspect = container.clientWidth / container.clientHeight;
@@ -353,7 +348,6 @@
             resizeObserver.observe(container);
         };
 
-        // ------------------ 地图核心状态 ------------------
         const mapState = {
             viewBox: { x: -40, y: -50, w: 340, h: 1080 },
             isDragging: false,
@@ -362,7 +356,7 @@
             startX: 0, 
             startY: 0,
             needsFocus: true,
-            clickTarget: null // 新增：用于记录真正被按下的 SVG 元素
+            clickTarget: null
         };
 
         window.mapZoom = (direction) => {
@@ -396,7 +390,6 @@
             completedReport: null
         };
 
-        // ------------------ Excel 读取与解析引擎 ------------------
         const handleExcelUpload = (e) => {
             const file = e.target.files[0];
             if (!file) return;
@@ -406,7 +399,6 @@
                 const data = new Uint8Array(evt.target.result);
                 const workbook = XLSX.read(data, {type: 'array'});
 
-                // 寻找指定名称的Sheet，找不到则取第一张
                 let sheetName = "拾件器";
                 if (!workbook.Sheets[sheetName]) {
                     sheetName = workbook.SheetNames[0];
@@ -416,12 +408,10 @@
 
                 let newTasks = [];
                 
-                // 从第2行（索引1）开始跳过表头
                 for (let i = 1; i < rows.length; i++) {
                     const row = rows[i];
                     if (!row || row.length === 0) continue;
 
-                    // 按照需求定义列: B(1)用量 C(2)颗粒名称 D(3)小柜位置 F(5)大柜位置
                     const qty = parseInt(row[1]) || 1;
                     const partName = row[2] || "未知颗粒";
                     const smallLoc = row[3];
@@ -436,18 +426,15 @@
                         locStr = String(largeLoc).trim();
                         isLarge = true;
                     } else {
-                        // DF都为空，跳过此零件
                         continue; 
                     }
 
-                    // 正则解析位置，如 "1柜1-1" 或 "1-1-1"
                     const regex = /^(\d+)[柜-]?(\d+)-(\d+)$/;
                     const match = locStr.match(regex);
                     
                     if (match) {
                         const cabId = `${isLarge ? "L" : "S"}-${match[1]}`;
                         
-                        // 过滤校验：确保该柜子在我们的地图数据结构中真实存在
                         const cab = CABINETS.find(c => c.id === cabId);
                         if (cab) {
                             newTasks.push({
@@ -471,7 +458,6 @@
                     alert("⚠️ 未在文件中找到有效的位置数据，请检查文件格式是否匹配（D列小柜，F列大柜）！");
                 }
                 
-                // 清空 input 保证下次可重复上传同名文件
                 document.getElementById('excel-upload').value = '';
             };
             reader.readAsArrayBuffer(file);
@@ -680,7 +666,6 @@
                             <animate attributeName="stroke-width" values="2; 8; 2" dur="1.5s" repeatCount="indefinite" />
                             <animate attributeName="stroke-opacity" values="1; 0; 0" dur="1.5s" repeatCount="indefinite" />
                         </rect>`;
-                        // 移除内联 onclick，改用 class 作为目标标识，由外层接管点击逻辑
                         interactiveGroupOpen = `<g class="cabinet-target cursor-pointer hover:opacity-80 transition-opacity">`;
                     }
                 }
@@ -715,7 +700,7 @@
                     mapState.lastY = e.clientY;
                     mapState.startX = e.clientX; 
                     mapState.startY = e.clientY;
-                    mapState.clickTarget = e.target; // 核心修复：记录鼠标按下的真实图层元素（比如那个发光的矩形）
+                    mapState.clickTarget = e.target; 
                     
                     svgEl.setPointerCapture(e.pointerId);
                     svgEl.style.cursor = 'grabbing';
@@ -749,14 +734,12 @@
                     const dx = e.clientX - mapState.startX;
                     const dy = e.clientY - mapState.startY;
                     
-                    // 判定是否是一次点击（鼠标位移极小）
                     if (Math.abs(dx) < 5 && Math.abs(dy) < 5) {
-                        // 使用记录好的 clickTarget 替代原本被指针拦截覆盖的 e.target
                         if (mapState.clickTarget && mapState.clickTarget.closest && mapState.clickTarget.closest('.cabinet-target')) {
                             switchMainView('cabinet');
                         }
                     }
-                    mapState.clickTarget = null; // 重置目标
+                    mapState.clickTarget = null; 
                 });
                 
                 svgEl.addEventListener('wheel', e => {
@@ -823,60 +806,60 @@
                 const varianceCount = report.tasks.filter(t => t.quantity !== t.originalQuantity).length;
 
                 container.innerHTML = `
-                    <div class="glass-panel rounded-[2rem] p-6 md:p-10 w-full h-full flex flex-col relative overflow-hidden bg-white/90">
-                        <div class="absolute -top-10 -right-10 opacity-5 pointer-events-none">
+                    <div class="glass-panel rounded-[2rem] p-4 md:p-10 w-full h-full flex flex-col relative overflow-hidden bg-white/90">
+                        <div class="absolute -top-10 -right-10 opacity-5 pointer-events-none hidden md:block">
                             <i data-lucide="clipboard-check" class="w-64 h-64 text-emerald-500"></i>
                         </div>
 
-                        <div class="flex justify-between items-start mb-8 relative z-10 shrink-0">
+                        <div class="flex justify-between items-start mb-6 md:mb-8 relative z-10 shrink-0">
                             <div>
-                                <div class="text-xs font-bold text-emerald-500 uppercase tracking-widest mb-1 flex items-center gap-1"><i data-lucide="check-circle-2" class="w-4 h-4"></i> 作业已完成</div>
-                                <h2 class="text-3xl md:text-4xl font-black text-slate-900 tracking-tight">拣货作业报告</h2>
-                                <div class="text-sm text-slate-500 font-mono mt-2">ID: ${report.id} · 耗时: ${report.durationStr}</div>
+                                <div class="text-[10px] md:text-xs font-bold text-emerald-500 uppercase tracking-widest mb-1 flex items-center gap-1"><i data-lucide="check-circle-2" class="w-3 h-3 md:w-4 md:h-4"></i> 作业已完成</div>
+                                <h2 class="text-2xl md:text-4xl font-black text-slate-900 tracking-tight">拣货作业报告</h2>
+                                <div class="text-[10px] md:text-sm text-slate-500 font-mono mt-1 md:mt-2">ID: ${report.id} · 耗时: ${report.durationStr}</div>
                             </div>
                             <div class="flex flex-col items-end gap-1.5">
-                                <button onclick="closeReport()" class="bg-slate-900 text-white px-5 py-2.5 rounded-xl font-bold text-sm flex items-center gap-2 hover:bg-slate-800 transition shadow-lg shadow-slate-900/20">
-                                    <i data-lucide="check" class="w-4 h-4"></i> 完成归档
+                                <button onclick="closeReport()" class="bg-slate-900 text-white px-4 py-2 md:px-5 md:py-2.5 rounded-xl font-bold text-xs md:text-sm flex items-center gap-1.5 hover:bg-slate-800 transition shadow-lg shadow-slate-900/20">
+                                    <i data-lucide="check" class="w-3 h-3 md:w-4 md:h-4"></i> 完成归档
                                 </button>
-                                <div class="text-[10px] text-slate-400 font-medium">确认后按照清单从总库扣除</div>
+                                <div class="text-[8px] md:text-[10px] text-slate-400 font-medium">确认后按清单扣除库存</div>
                             </div>
                         </div>
 
-                        <div class="grid grid-cols-3 gap-4 mb-6 shrink-0 relative z-10">
-                            <div class="bg-slate-50 border border-slate-100 rounded-2xl p-5">
-                                <div class="text-xs font-bold text-slate-400 uppercase tracking-widest mb-1">总计拣货</div>
-                                <div class="text-3xl font-black text-slate-800">${totalPicked} <span class="text-sm text-slate-400 font-normal">/ ${totalPlanned} 计划</span></div>
+                        <div class="grid grid-cols-3 gap-2 md:gap-4 mb-4 md:mb-6 shrink-0 relative z-10">
+                            <div class="bg-slate-50 border border-slate-100 rounded-2xl p-3 md:p-5">
+                                <div class="text-[9px] md:text-xs font-bold text-slate-400 uppercase tracking-widest mb-1 truncate">总计拣货</div>
+                                <div class="text-xl md:text-3xl font-black text-slate-800">${totalPicked} <span class="text-[10px] md:text-sm text-slate-400 font-normal">/ ${totalPlanned}</span></div>
                             </div>
-                            <div class="bg-slate-50 border border-slate-100 rounded-2xl p-5">
-                                <div class="text-xs font-bold text-slate-400 uppercase tracking-widest mb-1">完成库位</div>
-                                <div class="text-3xl font-black text-slate-800">${report.tasks.length} <span class="text-sm text-slate-400 font-normal">个</span></div>
+                            <div class="bg-slate-50 border border-slate-100 rounded-2xl p-3 md:p-5">
+                                <div class="text-[9px] md:text-xs font-bold text-slate-400 uppercase tracking-widest mb-1 truncate">完成库位</div>
+                                <div class="text-xl md:text-3xl font-black text-slate-800">${report.tasks.length} <span class="text-[10px] md:text-sm text-slate-400 font-normal">个</span></div>
                             </div>
-                            <div class="bg-${varianceCount > 0 ? 'amber' : 'emerald'}-50 border border-${varianceCount > 0 ? 'amber' : 'emerald'}-100 rounded-2xl p-5">
-                                <div class="text-xs font-bold text-${varianceCount > 0 ? 'amber' : 'emerald'}-500 uppercase tracking-widest mb-1">数量调整</div>
-                                <div class="text-3xl font-black text-${varianceCount > 0 ? 'amber' : 'emerald'}-600">${varianceCount} <span class="text-sm opacity-60 font-normal">项</span></div>
+                            <div class="bg-${varianceCount > 0 ? 'amber' : 'emerald'}-50 border border-${varianceCount > 0 ? 'amber' : 'emerald'}-100 rounded-2xl p-3 md:p-5">
+                                <div class="text-[9px] md:text-xs font-bold text-${varianceCount > 0 ? 'amber' : 'emerald'}-500 uppercase tracking-widest mb-1 truncate">数量调整</div>
+                                <div class="text-xl md:text-3xl font-black text-${varianceCount > 0 ? 'amber' : 'emerald'}-600">${varianceCount} <span class="text-[10px] md:text-sm opacity-60 font-normal">项</span></div>
                             </div>
                         </div>
 
                         <div class="flex-1 bg-white border border-slate-100 rounded-2xl overflow-hidden flex flex-col relative z-10 min-h-0 shadow-sm">
-                            <div class="bg-slate-50 px-5 py-3 border-b border-slate-100 grid grid-cols-12 text-xs font-bold text-slate-400 uppercase tracking-wider shrink-0">
+                            <div class="bg-slate-50 px-3 py-2 md:px-5 md:py-3 border-b border-slate-100 grid grid-cols-12 text-[9px] md:text-xs font-bold text-slate-400 uppercase tracking-wider shrink-0">
                                 <div class="col-span-3">库位编号</div>
                                 <div class="col-span-5">物料详情</div>
                                 <div class="col-span-2 text-center">计划数</div>
-                                <div class="col-span-2 text-right">实际出库</div>
+                                <div class="col-span-2 text-right">出库</div>
                             </div>
-                            <div class="flex-1 overflow-y-auto p-2 no-scrollbar">
+                            <div class="flex-1 overflow-y-auto p-1 md:p-2 no-scrollbar">
                                 ${report.tasks.map(t => {
                                     const diff = t.quantity - t.originalQuantity;
                                     let qtyHtml = `<span class="font-bold text-slate-700">${t.quantity}</span>`;
-                                    if (diff > 0) qtyHtml = `<span class="font-black text-emerald-600 bg-emerald-100 px-2 py-0.5 rounded">${t.quantity} (+${diff})</span>`;
-                                    if (diff < 0) qtyHtml = `<span class="font-black text-amber-600 bg-amber-100 px-2 py-0.5 rounded">${t.quantity} (${diff})</span>`;
+                                    if (diff > 0) qtyHtml = `<span class="font-black text-emerald-600 bg-emerald-100 px-1 md:px-2 py-0.5 rounded">${t.quantity} (+${diff})</span>`;
+                                    if (diff < 0) qtyHtml = `<span class="font-black text-amber-600 bg-amber-100 px-1 md:px-2 py-0.5 rounded">${t.quantity} (${diff})</span>`;
 
                                     return `
-                                    <div class="grid grid-cols-12 px-3 py-3 items-center border-b border-slate-50 last:border-0 hover:bg-slate-50 rounded-xl transition-colors">
-                                        <div class="col-span-3 font-mono text-sm font-bold text-slate-600">${t.cabinetId} <span class="text-xs text-slate-400 font-normal">(${t.row}-${t.col})</span></div>
-                                        <div class="col-span-5 text-sm font-bold text-slate-800">${t.partName}</div>
-                                        <div class="col-span-2 text-center text-sm text-slate-400 font-mono">${t.originalQuantity}</div>
-                                        <div class="col-span-2 text-right text-sm">${qtyHtml}</div>
+                                    <div class="grid grid-cols-12 px-2 py-2 md:px-3 md:py-3 items-center border-b border-slate-50 last:border-0 hover:bg-slate-50 rounded-xl transition-colors">
+                                        <div class="col-span-3 font-mono text-[10px] md:text-sm font-bold text-slate-600">${t.cabinetId} <span class="text-[8px] md:text-xs text-slate-400 font-normal hidden sm:inline">(${t.row}-${t.col})</span></div>
+                                        <div class="col-span-5 text-[10px] md:text-sm font-bold text-slate-800 truncate pr-2">${t.partName}</div>
+                                        <div class="col-span-2 text-center text-[10px] md:text-sm text-slate-400 font-mono">${t.originalQuantity}</div>
+                                        <div class="col-span-2 text-right text-[10px] md:text-sm">${qtyHtml}</div>
                                     </div>
                                     `;
                                 }).join('')}
@@ -888,7 +871,6 @@
             else if (state.isGuiding && state.pickingTasks.length > 0) {
                 const task = state.pickingTasks[state.currentTaskIndex];
                 
-                // 动态匹配零件库类型，若未找到则采用“积木”作为兜底用于渲染3D积木块
                 let partInfo = PARTS_DB.find(p => p.name === task.partName);
                 if (!partInfo) {
                     partInfo = { name: task.partName, type: "积木", img: PART_IMAGES["积木"] };
@@ -902,86 +884,89 @@
                     for(let r=1; r<=rows; r++) {
                         for(let c=1; c<=cols; c++) {
                             const isTgt = (r === task.row && c === task.col);
-                            gridHtml += `<div class="rounded flex justify-center items-center font-mono transition-all duration-500 ${isTgt ? 'bg-orange-500 text-white shadow-glow-orange scale-[1.15] z-10 font-black text-sm lg:text-xl' : 'bg-slate-50 border border-slate-200/60 text-slate-400 text-[10px] md:text-xs'}">${isTgt ? `${r}-${c}` : '<span class="opacity-40">·</span>'}</div>`;
+                            gridHtml += `<div class="rounded flex justify-center items-center font-mono transition-all duration-500 ${isTgt ? 'bg-orange-500 text-white shadow-glow-orange scale-[1.15] z-10 font-black text-xs md:text-xl' : 'bg-slate-200/50 border border-slate-300/50 text-slate-400 text-[9px] md:text-xs'}">${isTgt ? `${r}-${c}` : '<span class="opacity-40">·</span>'}</div>`;
                         }
                     }
 
                     const diff = task.quantity - task.originalQuantity;
                     let qtyColorClass = "text-white";
-                    let diffIndicatorHtml = `<div class="h-5"></div>`; 
+                    let diffIndicatorHtml = `<div class="h-3 md:h-5 mt-0.5 md:mt-1"></div>`; 
                     
                     if (diff > 0) {
                         qtyColorClass = "text-emerald-400";
-                        diffIndicatorHtml = `<div class="h-5 flex items-center justify-center"><div class="text-emerald-400/90 text-[10px] font-bold bg-emerald-400/10 px-2 py-0.5 rounded-full flex items-center gap-1"><i data-lucide="plus" class="w-3 h-3"></i>${diff} 增加</div></div>`;
+                        diffIndicatorHtml = `<div class="h-3 md:h-5 flex items-center justify-center mt-0.5 md:mt-1"><div class="text-emerald-400/90 text-[9px] md:text-[10px] font-bold bg-emerald-400/10 px-1.5 py-0.5 rounded-full flex items-center gap-0.5"><i data-lucide="plus" class="w-2.5 h-2.5 md:w-3 md:h-3"></i>${diff} 增加</div></div>`;
                     } else if (diff < 0) {
                         qtyColorClass = "text-amber-400";
-                        diffIndicatorHtml = `<div class="h-5 flex items-center justify-center"><div class="text-amber-400/90 text-[10px] font-bold bg-amber-400/10 px-2 py-0.5 rounded-full flex items-center gap-1"><i data-lucide="minus" class="w-3 h-3"></i>${Math.abs(diff)} 减少</div></div>`;
+                        diffIndicatorHtml = `<div class="h-3 md:h-5 flex items-center justify-center mt-0.5 md:mt-1"><div class="text-amber-400/90 text-[9px] md:text-[10px] font-bold bg-amber-400/10 px-1.5 py-0.5 rounded-full flex items-center gap-0.5"><i data-lucide="minus" class="w-2.5 h-2.5 md:w-3 md:h-3"></i>${Math.abs(diff)} 减少</div></div>`;
                     }
 
+                    // 【核心优化】保证网格比例完全死锁，绝对防拉伸变形
+                    const isWide = cols > rows;
+                    const gridStyle = `display: grid; grid-template-rows: repeat(${rows}, minmax(0, 1fr)); grid-template-columns: repeat(${cols}, minmax(0, 1fr)); aspect-ratio: ${cols} / ${rows}; max-width: 100%; max-height: 100%; margin: auto; ${isWide ? 'width: 100%;' : 'height: 100%;'}`;
+
+                    // 【核心优化】手机端横向排布操作区与3D模型，保证在 100vh 内无需滚动
                     container.innerHTML = `
-                        <div class="flex flex-col md:flex-row gap-4 w-full h-full">
-                            <!-- Left: Cabinet Layout -->
-                            <div class="glass-panel rounded-[2rem] p-6 flex flex-col relative min-h-[300px] h-full flex-[2]">
-                                <div class="flex justify-between items-start mb-4 shrink-0">
-                                    <div>
-                                        <div class="text-[10px] uppercase font-bold text-slate-400 mb-1">Cabinet Layout</div>
-                                        <div class="flex items-end gap-3">
-                                            <h3 class="text-2xl md:text-3xl font-black text-slate-900">${task.cabinetId} 号柜格口</h3>
-                                            <div class="bg-white text-slate-500 text-xs px-2 py-1 rounded-md font-mono border shadow-sm mb-1">${rows}x${cols}</div>
-                                        </div>
+                        <div class="flex flex-col-reverse md:flex-row gap-2 md:gap-4 w-full h-full overflow-hidden pb-1 md:pb-0">
+                            
+                            <!-- Left/Bottom: Cabinet Layout (Proportion-Locked to prevent squash) -->
+                            <div class="glass-panel rounded-[1.5rem] md:rounded-[2rem] p-3 md:p-6 flex flex-col relative flex-1 min-h-0">
+                                <div class="flex justify-between items-start mb-2 md:mb-4 shrink-0">
+                                    <div class="flex items-center gap-2 md:gap-3">
+                                        <h3 class="text-xl md:text-3xl font-black text-slate-900 tracking-tight">${task.cabinetId}</h3>
+                                        <div class="bg-slate-100 text-slate-500 text-[10px] md:text-xs px-2 py-1 rounded-md font-mono border border-slate-200/50">${rows}x${cols}</div>
                                     </div>
-                                    <button onclick="switchMainView('map')" class="bg-brand-50 text-brand-600 px-4 py-2.5 rounded-xl font-bold text-xs flex items-center gap-2 hover:bg-brand-100 transition border border-brand-100 shadow-sm whitespace-nowrap">
-                                        <i data-lucide="map" class="w-4 h-4"></i> 不清楚位置？查看导航
+                                    <button onclick="switchMainView('map')" class="bg-brand-50 text-brand-600 px-3 py-1.5 md:px-4 md:py-2.5 rounded-xl font-bold text-[10px] md:text-xs flex items-center gap-1.5 hover:bg-brand-100 transition border border-brand-100 shadow-sm">
+                                        <i data-lucide="map" class="w-3 h-3 md:w-4 md:h-4"></i> 查看导航
                                     </button>
                                 </div>
                                 
-                                <div class="flex-1 bg-white rounded-xl border p-2 md:p-4 overflow-hidden shadow-inner flex relative min-h-0">
-                                    <div class="absolute inset-0 bg-[radial-gradient(#f1f5f9_1px,transparent_1px)] [background-size:20px_20px] pointer-events-none"></div>
-                                    <div class="w-full h-full grid gap-1 relative z-10" style="grid-template-rows: repeat(${rows}, minmax(0, 1fr)); grid-template-columns: repeat(${cols}, minmax(0, 1fr));">
+                                <div class="flex-1 bg-white/50 rounded-xl border border-slate-200/60 p-1 md:p-4 flex items-center justify-center overflow-hidden relative">
+                                    <div class="absolute inset-0 bg-[radial-gradient(#e2e8f0_1px,transparent_1px)] [background-size:16px_16px] pointer-events-none"></div>
+                                    <div class="z-10" style="${gridStyle}">
                                         ${gridHtml}
                                     </div>
                                 </div>
                             </div>
 
-                            <!-- Right: Part Info & Interactive Action -->
-                            <div class="flex flex-col gap-4 flex-1 h-full">
-                                <!-- Part Info -->
-                                <div class="glass-panel rounded-[2rem] p-6 flex flex-col items-center justify-center relative flex-1 min-h-[200px]">
-                                    <div class="absolute top-4 right-4 text-[10px] font-bold text-slate-400 uppercase tracking-widest z-10">Target Part (3D Model)</div>
-                                    <div class="flex items-center justify-center w-full flex-1 perspective-1000 mb-2 relative">
-                                        <div class="absolute bg-brand-500/10 blur-xl rounded-full w-32 h-32"></div>
-                                        <div id="part-3d-viewer" class="w-full h-full absolute inset-0 z-10 cursor-grab active:cursor-grabbing"></div>
-                                    </div>
-                                    <div class="text-center w-full shrink-0 relative z-20 pointer-events-none">
-                                        <div class="inline-block bg-brand-100 text-brand-600 px-3 py-1 rounded text-xs font-bold uppercase tracking-wider mb-2">${partInfo.type}</div>
-                                        <h2 class="text-2xl md:text-3xl font-black text-slate-900 tracking-tight truncate">${task.partName}</h2>
+                            <!-- Right/Top: Info & Interactive Action -->
+                            <div class="flex flex-row md:flex-col gap-2 md:gap-4 shrink-0 h-[170px] md:h-full md:w-[320px] w-full">
+                                <!-- Part Info (3D Model) -->
+                                <div class="glass-panel rounded-[1.5rem] md:rounded-[2rem] flex flex-col items-center justify-center relative flex-1 min-w-0 bg-white/80 overflow-hidden">
+                                    <div id="part-3d-viewer" class="w-full h-full absolute inset-0 z-10 cursor-grab active:cursor-grabbing"></div>
+                                    <!-- 移除遮挡标题，将说明置于底部 -->
+                                    <div class="absolute bottom-0 left-0 right-0 text-center z-20 pointer-events-none bg-gradient-to-t from-white/80 via-white/50 to-transparent pt-6 pb-2">
+                                        <h2 class="text-sm md:text-xl font-black text-slate-900 tracking-tight truncate px-2">${task.partName}</h2>
+                                        <div class="text-[8px] md:text-[10px] text-brand-600 font-bold uppercase tracking-wider">${partInfo.type}</div>
                                     </div>
                                 </div>
 
-                                <!-- Interactive Qty Display -->
-                                <div class="glass-panel rounded-[2rem] bg-slate-900 border-slate-800 p-6 flex flex-col items-center justify-center shrink-0 h-[170px] overflow-hidden relative">
+                                <!-- Interactive Qty Display & Next Button -->
+                                <div class="glass-panel rounded-[1.5rem] md:rounded-[2rem] bg-slate-900 p-3 md:p-5 flex flex-col justify-between flex-1 min-w-0 relative">
                                     <div class="absolute -inset-10 bg-brand-500 blur-3xl opacity-20 pointer-events-none"></div>
                                     
-                                    <div class="relative z-10 text-center w-full flex flex-col items-center">
-                                        <div class="text-xs font-bold text-slate-400 uppercase tracking-widest mb-3">Pick Qty</div>
-                                        
-                                        <div class="flex items-center justify-center gap-6 w-full px-2">
-                                            <button onclick="adjustQuantity(-1)" class="w-12 h-12 rounded-full bg-white/10 hover:bg-white/20 text-white flex items-center justify-center transition-colors border border-white/10 shrink-0">
+                                    <div class="text-center w-full flex-1 flex flex-col justify-center relative z-10">
+                                        <div class="flex items-center justify-between md:justify-center gap-1 md:gap-6 w-full">
+                                            <button onclick="adjustQuantity(-1)" class="w-10 h-10 md:w-12 md:h-12 rounded-full bg-white/10 hover:bg-white/20 text-white flex items-center justify-center transition-colors border border-white/10 shrink-0">
                                                 <i data-lucide="minus" class="w-5 h-5"></i>
                                             </button>
                                             
-                                            <div class="flex flex-col items-center justify-center min-w-[100px]">
-                                                <div class="text-5xl md:text-6xl font-black ${qtyColorClass} leading-none tracking-tighter transition-colors mb-2">
+                                            <div class="flex flex-col items-center justify-center min-w-[60px] md:min-w-[100px]">
+                                                <div class="text-4xl md:text-6xl font-black ${qtyColorClass} leading-none tracking-tighter transition-colors">
                                                     ${task.quantity}
                                                 </div>
                                                 ${diffIndicatorHtml}
                                             </div>
 
-                                            <button onclick="adjustQuantity(1)" class="w-12 h-12 rounded-full bg-white/10 hover:bg-white/20 text-white flex items-center justify-center transition-colors border border-white/10 shrink-0">
+                                            <button onclick="adjustQuantity(1)" class="w-10 h-10 md:w-12 md:h-12 rounded-full bg-white/10 hover:bg-white/20 text-white flex items-center justify-center transition-colors border border-white/10 shrink-0">
                                                 <i data-lucide="plus" class="w-5 h-5"></i>
                                             </button>
                                         </div>
                                     </div>
+
+                                    <!-- 单独暴露的巨大下一步按钮 -->
+                                    <button onclick="nextGuidanceStep()" class="w-full py-2.5 md:py-3 bg-brand-500 text-white rounded-xl font-bold flex justify-center items-center gap-1.5 shadow-glow hover:bg-brand-600 transition-colors shrink-0 z-10 text-sm mt-2 md:mt-0">
+                                        下一步 <i data-lucide="arrow-right" class="w-4 h-4"></i>
+                                    </button>
                                 </div>
                             </div>
                         </div>
@@ -996,18 +981,18 @@
                 else {
                     container.innerHTML = `
                         <div class="w-full h-full relative glass-panel rounded-[2rem] overflow-hidden flex flex-col items-center bg-white/40">
-                            <div class="absolute top-6 left-1/2 transform -translate-x-1/2 z-50 bg-slate-900/90 backdrop-blur text-white px-6 py-3 rounded-full flex items-center gap-2 shadow-xl shadow-slate-900/20 cursor-pointer hover:bg-slate-800 transition-transform hover:scale-105 font-bold" onclick="switchMainView('cabinet')">
-                                <i data-lucide="undo-2" class="w-5 h-5 text-brand-400"></i> 返回柜面视图
+                            <div class="absolute top-6 left-1/2 transform -translate-x-1/2 z-50 bg-slate-900/90 backdrop-blur text-white px-6 py-3 rounded-full flex items-center gap-2 shadow-xl shadow-slate-900/20 cursor-pointer hover:bg-slate-800 transition-transform hover:scale-105 font-bold text-sm" onclick="switchMainView('cabinet')">
+                                <i data-lucide="undo-2" class="w-4 h-4 text-brand-400"></i> 返回柜面
                             </div>
-                            <div class="absolute top-20 left-1/2 transform -translate-x-1/2 z-40 bg-white/90 backdrop-blur px-4 py-1.5 rounded-lg text-xs font-bold text-slate-500 shadow-sm border border-white/50 text-center pointer-events-none">
-                                自由拖拽与缩放地图。点击 <span class="text-brand-600">发光目标柜</span> 亦可跳回
+                            <div class="absolute top-20 left-1/2 transform -translate-x-1/2 z-40 bg-white/90 backdrop-blur px-4 py-1.5 rounded-lg text-[10px] font-bold text-slate-500 shadow-sm border border-white/50 text-center pointer-events-none whitespace-nowrap">
+                                自由拖拽缩放，点击<span class="text-brand-600">发光目标柜</span>返回
                             </div>
 
-                            <div class="absolute bottom-8 right-8 z-50 flex flex-col gap-3">
-                                <button onclick="window.mapFocusCurrent()" class="w-12 h-12 bg-white text-slate-700 rounded-full shadow-xl border border-slate-100 flex items-center justify-center hover:bg-brand-50 hover:text-brand-600 transition-colors" title="重新聚焦"><i data-lucide="crosshair" class="w-5 h-5"></i></button>
+                            <div class="absolute bottom-8 right-4 md:right-8 z-50 flex flex-col gap-3">
+                                <button onclick="window.mapFocusCurrent()" class="w-10 h-10 md:w-12 md:h-12 bg-white text-slate-700 rounded-full shadow-xl border border-slate-100 flex items-center justify-center hover:bg-brand-50 hover:text-brand-600 transition-colors" title="重新聚焦"><i data-lucide="crosshair" class="w-4 h-4 md:w-5 md:h-5"></i></button>
                                 <div class="flex flex-col bg-white rounded-2xl shadow-xl border border-slate-100 overflow-hidden">
-                                    <button onclick="window.mapZoom(1)" class="w-12 h-12 flex items-center justify-center text-slate-700 hover:bg-brand-50 hover:text-brand-600 transition-colors border-b border-slate-100" title="放大"><i data-lucide="plus" class="w-5 h-5"></i></button>
-                                    <button onclick="window.mapZoom(-1)" class="w-12 h-12 flex items-center justify-center text-slate-700 hover:bg-brand-50 hover:text-brand-600 transition-colors" title="缩小"><i data-lucide="minus" class="w-5 h-5"></i></button>
+                                    <button onclick="window.mapZoom(1)" class="w-10 h-10 md:w-12 md:h-12 flex items-center justify-center text-slate-700 hover:bg-brand-50 hover:text-brand-600 transition-colors border-b border-slate-100" title="放大"><i data-lucide="plus" class="w-4 h-4 md:w-5 md:h-5"></i></button>
+                                    <button onclick="window.mapZoom(-1)" class="w-10 h-10 md:w-12 md:h-12 flex items-center justify-center text-slate-700 hover:bg-brand-50 hover:text-brand-600 transition-colors" title="缩小"><i data-lucide="minus" class="w-4 h-4 md:w-5 md:h-5"></i></button>
                                 </div>
                             </div>
 
