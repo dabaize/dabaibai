@@ -1428,11 +1428,11 @@
 
                 // 判定为有效的垂直滑动（垂直距离大于 50 像素，且垂直位移大于水平位移防误触）
                 if (Math.abs(deltaY) > 50 && Math.abs(deltaY) > deltaX) {
-                    if (deltaY > 0) {
-                        // 向上滑动 -> 执行下一步
+                    if (deltaY < 0) {
+                        // 向下滑动 -> 执行下一步
                         nextGuidanceStep();
                     } else {
-                        // 向下滑动 -> 执行上一步
+                        // 向上滑动 -> 执行上一步
                         prevGuidanceStep();
                     }
                 }
