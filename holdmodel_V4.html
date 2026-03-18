@@ -518,7 +518,7 @@
                     ` : ''}
                     <div id="task-list-container" class="flex-1 overflow-y-auto no-scrollbar relative min-h-0">
                         <div class="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-3 flex justify-between items-center sticky top-0 bg-white/90 backdrop-blur pb-2 z-10">
-                            <span>Task Queue</span><span class="bg-brand-100 text-brand-600 px-2 py-0.5 rounded-full">${state.pickingTasks.length}</span>
+                            <span>Task Queue</span><span class="bg-brand-100 text-brand-600 px-1.5 min-w-[18px] h-[18px] flex items-center justify-center rounded-full leading-none">${state.pickingTasks.length}</span>
                         </div>
                         <div class="space-y-2 pb-10">
                             ${state.pickingTasks.length === 0 ? `<div class="text-center text-slate-400 text-xs py-10"><i data-lucide="inbox" class="w-8 h-8 opacity-20 mx-auto mb-2"></i>暂无拣货任务</div>` : 
@@ -884,7 +884,6 @@
                     for(let r=1; r<=rows; r++) {
                         for(let c=1; c<=cols; c++) {
                             const isTgt = (r === task.row && c === task.col);
-                            // 增大了普通格子的字号(text-[10px])并加深颜色，充分利用撑满后的可用空间
                             gridHtml += `<div class="rounded flex justify-center items-center font-mono transition-all duration-500 ${isTgt ? 'bg-orange-500 text-white shadow-glow-orange scale-[1.15] z-10 font-black text-xs md:text-xl' : 'bg-slate-200/50 border border-slate-300/50 text-slate-500 text-[10px] md:text-xs font-medium'}">${isTgt ? `${r}-${c}` : '<span class="opacity-40">·</span>'}</div>`;
                         }
                     }
@@ -901,10 +900,8 @@
                         diffIndicatorHtml = `<div class="h-3 md:h-5 flex items-center justify-center mt-0.5 md:mt-1"><div class="text-amber-400/90 text-[9px] md:text-[10px] font-bold bg-amber-400/10 px-1.5 py-0.5 rounded-full flex items-center gap-0.5"><i data-lucide="minus" class="w-2.5 h-2.5 md:w-3 md:h-3"></i>${Math.abs(diff)} 减少</div></div>`;
                     }
 
-                    // 【核心优化】：彻底移除 aspect-ratio，让柜子动态填满容器，避免两侧留白导致的格子过于袖珍溢出
                     const gridStyle = `display: grid; grid-template-rows: repeat(${rows}, minmax(0, 1fr)); grid-template-columns: repeat(${cols}, minmax(0, 1fr)); width: 100%; height: 100%; gap: 2px;`;
 
-                    // 【核心优化】：将 flex-col-reverse 改为了 flex-col (正向排布)，使得柜子在上，操作区在下。彻底拉开了“导航”与“下一步”的物理距离！
                     container.innerHTML = `
                         <div class="flex flex-col md:flex-row gap-3 md:gap-4 w-full h-full overflow-hidden pb-1 md:pb-0">
                             
@@ -915,7 +912,6 @@
                                         <h3 class="text-xl md:text-3xl font-black text-slate-900 tracking-tight">${task.cabinetId}</h3>
                                         <div class="bg-slate-100 text-slate-500 text-[10px] md:text-xs px-2 py-1 rounded-md font-mono border border-slate-200/50">${rows}x${cols}</div>
                                     </div>
-                                    <!-- 导航按钮固定在屏幕上方区域 -->
                                     <button onclick="switchMainView('map')" class="bg-brand-50 text-brand-600 px-3 py-1.5 md:px-4 md:py-2.5 rounded-xl font-bold text-[10px] md:text-xs flex items-center gap-1.5 hover:bg-brand-100 transition border border-brand-100 shadow-sm">
                                         <i data-lucide="map" class="w-3 h-3 md:w-4 md:h-4"></i> 查看导航
                                     </button>
@@ -963,10 +959,16 @@
                                         </div>
                                     </div>
 
-                                    <!-- 下一步按钮固定在屏幕最底部的右侧，远离导航按钮 -->
-                                    <button onclick="nextGuidanceStep()" class="w-full py-2.5 md:py-3 bg-brand-500 text-white rounded-xl font-bold flex justify-center items-center gap-1.5 shadow-glow hover:bg-brand-600 transition-colors shrink-0 z-10 text-sm mt-2 md:mt-0">
-                                        下一步 <i data-lucide="arrow-right" class="w-4 h-4"></i>
-                                    </button>
+                                    <div class="flex gap-2 md:gap-3 w-full shrink-0 z-10 mt-2 md:mt-0">
+                                        ${state.currentTaskIndex > 0 ? `
+                                        <button onclick="prevGuidanceStep()" class="w-10 h-10 md:w-12 md:h-12 bg-slate-700 text-white rounded-xl flex justify-center items-center hover:bg-slate-600 transition-colors shrink-0 shadow-lg" title="上一步">
+                                            <i data-lucide="arrow-left" class="w-4 h-4 md:w-5 md:h-5"></i>
+                                        </button>
+                                        ` : ''}
+                                        <button onclick="nextGuidanceStep()" class="flex-1 h-10 md:h-12 bg-brand-500 text-white rounded-xl font-bold flex justify-center items-center gap-1.5 shadow-glow hover:bg-brand-600 transition-colors text-sm">
+                                            下一步 <i data-lucide="arrow-right" class="w-4 h-4 md:w-5 md:h-5"></i>
+                                        </button>
+                                    </div>
                                 </div>
                             </div>
                         </div>
@@ -977,7 +979,6 @@
                     }, 50);
 
                 } 
-                // ---------- 视图分支 2：全屏地图导航 (Map View) ----------
                 else {
                     container.innerHTML = `
                         <div class="w-full h-full relative glass-panel rounded-[2rem] overflow-hidden flex flex-col items-center bg-white/40">
@@ -1003,23 +1004,42 @@
                     `;
                 }
             } 
-            // ---------- 空状态提示 ----------
             else {
-                container.innerHTML = `
-                    <div class="flex flex-col md:flex-row gap-4 w-full h-full">
-                        <div class="glass-panel rounded-[2rem] border-dashed border-2 flex flex-col items-center justify-center text-slate-400 flex-1 min-h-[300px]">
-                            <i data-lucide="file-spreadsheet" class="w-12 h-12 text-brand-500 mb-4 opacity-50"></i>
-                            <h3 class="text-lg font-black text-slate-700 mb-2">导入拣货清单</h3>
-                            <p class="text-xs font-bold tracking-widest uppercase mb-6">请上传包含位置信息的 Excel 文件</p>
-                            <button onclick="document.getElementById('excel-upload').click()" class="bg-brand-500 text-white px-6 py-3 rounded-xl font-bold text-sm shadow-glow hover:bg-brand-600 transition-colors flex items-center gap-2">
-                                <i data-lucide="upload" class="w-4 h-4"></i> 选择 Excel 文件
-                            </button>
+                if (state.pickingTasks.length === 0) {
+                    container.innerHTML = `
+                        <div class="flex flex-col md:flex-row gap-4 w-full h-full">
+                            <div class="glass-panel rounded-[2rem] border-dashed border-2 flex flex-col items-center justify-center text-slate-400 flex-1 min-h-[300px]">
+                                <i data-lucide="file-spreadsheet" class="w-12 h-12 text-brand-500 mb-4 opacity-50"></i>
+                                <h3 class="text-lg font-black text-slate-700 mb-2">导入拣货清单</h3>
+                                <p class="text-xs font-bold tracking-widest uppercase mb-6">请上传包含位置信息的 Excel 文件</p>
+                                <button onclick="document.getElementById('excel-upload').click()" class="bg-brand-500 text-white px-6 py-3 rounded-xl font-bold text-sm shadow-glow hover:bg-brand-600 transition-colors flex items-center gap-2">
+                                    <i data-lucide="upload" class="w-4 h-4"></i> 选择 Excel 文件
+                                </button>
+                            </div>
+                            <div class="flex-1 w-full min-h-[300px] glass-panel rounded-[2rem] overflow-hidden flex items-center justify-center opacity-50 grayscale relative" id="map-container">
+                                <!-- SVG dynamically injected here -->
+                            </div>
                         </div>
-                        <div class="flex-1 w-full min-h-[300px] glass-panel rounded-[2rem] overflow-hidden flex items-center justify-center opacity-50 grayscale relative" id="map-container">
-                            <!-- SVG dynamically injected here -->
+                    `;
+                } else {
+                    container.innerHTML = `
+                        <div class="flex flex-col md:flex-row gap-4 w-full h-full">
+                            <div class="glass-panel rounded-[2rem] border-2 border-brand-100 flex flex-col items-center justify-center text-slate-600 flex-1 min-h-[300px] bg-brand-50/40">
+                                <div class="w-20 h-20 bg-white rounded-full flex items-center justify-center mb-6 shadow-sm border border-brand-100 text-brand-500">
+                                    <i data-lucide="list-checks" class="w-10 h-10"></i>
+                                </div>
+                                <h3 class="text-2xl font-black text-slate-800 mb-2 tracking-tight">已成功读取 ${state.pickingTasks.length} 项任务</h3>
+                                <p class="text-sm font-medium text-slate-500 mb-8">路径及目标已就位，请点击下方按钮开始</p>
+                                <button onclick="startGuidance()" class="bg-brand-500 text-white px-10 py-4 rounded-2xl font-black text-lg shadow-glow hover:bg-brand-600 transition-transform hover:scale-105 flex items-center gap-3">
+                                    <i data-lucide="play" class="w-6 h-6"></i> 开始作业
+                                </button>
+                            </div>
+                            <div class="flex-1 w-full min-h-[300px] glass-panel rounded-[2rem] overflow-hidden flex items-center justify-center opacity-90 relative" id="map-container">
+                                <!-- SVG dynamically injected here -->
+                            </div>
                         </div>
-                    </div>
-                `;
+                    `;
+                }
             }
         };
 
@@ -1062,6 +1082,17 @@
             }, 800);
         };
         
+        const prevGuidanceStep = () => {
+            if (state.currentTaskIndex > 0) { 
+                state.currentTaskIndex--; 
+                if (state.mainView === 'map') {
+                    mapState.needsFocus = true;
+                }
+                updateUI();
+                setTimeout(scrollToActiveTask, 50);
+            }
+        };
+
         const nextGuidanceStep = () => {
             if (state.currentTaskIndex < state.pickingTasks.length - 1) { 
                 state.currentTaskIndex++; 
