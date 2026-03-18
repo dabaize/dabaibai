@@ -441,7 +441,7 @@
                 if (data.code === 0 && data.data && data.data.items && data.data.items.length > 0) {
                     const record = data.data.items[0];
                     
-                    // 增强型解析函数：处理多维表格返回的多种数据结构 (字符串、对象数组、分段富文本)
+                    // 增强型解析函数：处理多维表格返回的多种数据结构 (兼容字符串、对象、数组)
                     const extractFieldText = (fieldData) => {
                         if (!fieldData) return '';
                         if (typeof fieldData === 'string') return fieldData;
@@ -453,7 +453,10 @@
                     };
 
                     const drawingName = extractFieldText(record.fields['图纸名称']) || '未知图纸';
-                    const listStr = extractFieldText(record.fields['拾件列表']) || '[]';
+                    
+                    // 【关键修复】：兼容查找 "颗粒列表" 或者 "拾件列表"
+                    const listData = record.fields['颗粒列表'] || record.fields['拾件列表'];
+                    const listStr = extractFieldText(listData) || '[]';
                     
                     let rawList = [];
                     try {
@@ -462,7 +465,7 @@
                         rawList = JSON.parse(cleanStr);
                     } catch (err) {
                         console.error('JSON Parsing Error:', err, 'Raw String:', listStr);
-                        alert('⚠️ 云端数据的 [拾件列表] 格式无法解析为标准 JSON，请检查数据源！');
+                        alert('⚠️ 云端数据的颗粒列表格式无法解析为标准 JSON，请检查数据源！');
                         updateUI();
                         return;
                     }
@@ -503,7 +506,7 @@
                             console.log(`[WMS Pro] 成功批量拉取了 ${uniqueParts.length} 种颗粒的 UUID 缓存 (云端工单)`);
                         });
                     } else {
-                        alert('⚠️ 解析成功，但云端拾件列表中没有有效的颗粒数据！');
+                        alert('⚠️ 解析成功，但云端数据列表中没有有效的颗粒数据！');
                         updateUI();
                     }
                 } else {
