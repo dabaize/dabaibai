@@ -240,7 +240,7 @@
         // 全局核心状态
         const state = { 
             pickingTasks: [], 
-            drawingName: null,  // 图纸名称
+            drawingName: null,  
             isGuiding: false, 
             currentTaskIndex: 0, 
             mainView: 'cabinet',
@@ -255,7 +255,7 @@
         
         window.GlobalModelCache = {}; 
         window.GlobalModelIdCache = {}; 
-        window.GlobalLocationCache = {}; // 新增：颗粒名称 -> 云端位置 的映射缓存
+        window.GlobalLocationCache = {}; // 颗粒名称 -> { loc: 位置, type: 柜体 }
 
         const batchFetchCloudModelIds = async (partNames) => {
             if (!partNames || partNames.length === 0) return;
@@ -266,8 +266,8 @@
             for (let i = 0; i < partNames.length; i += chunkSize) {
                 const chunk = partNames.slice(i, i + chunkSize);
                 const placeholders = chunk.map(() => '?').join(',');
-                // 将数据表名称从 IT_GBase 更新为 Design_Itempicker
-                const query = `SELECT 颗粒名称, UUID, 位置 FROM Design_Itempicker WHERE 颗粒名称 IN (${placeholders})`;
+                // 聚合查询: 颗粒名称, UUID, 位置, 柜体
+                const query = `SELECT 颗粒名称, UUID, 位置, 柜体 FROM Design_Itempicker WHERE 颗粒名称 IN (${placeholders})`;
                 
                 try {
                     const res = await fetch(API_ENDPOINT, {
@@ -283,10 +283,27 @@
                     const records = data.data || data.result || [];
                     
                     records.forEach(record => {
-                        if (record['颗粒名称']) {
-                            if (record['UUID']) window.GlobalModelIdCache[record['颗粒名称']] = record['UUID'];
-                            // 存入真实的位置映射
-                            if (record['位置']) window.GlobalLocationCache[record['颗粒名称']] = record['位置'];
+                        const partName = record['颗粒名称'];
+                        if (partName) {
+                            // 处理 UUID 的 "['2587']" 格式
+                            let uuidVal = record['UUID'];
+                            if (typeof uuidVal === 'string' && uuidVal.startsWith('[')) {
+                                try {
+                                    const parsed = JSON.parse(uuidVal);
+                                    if (Array.isArray(parsed) && parsed.length > 0) uuidVal = parsed[0];
+                                } catch(e) {}
+                            } else if (Array.isArray(uuidVal) && uuidVal.length > 0) {
+                                uuidVal = uuidVal[0];
+                            }
+                            if (uuidVal) window.GlobalModelIdCache[partName] = String(uuidVal);
+
+                            // 缓存位置与柜体数据
+                            if (record['位置'] || record['柜体']) {
+                                window.GlobalLocationCache[partName] = {
+                                    loc: record['位置'] || '',
+                                    type: record['柜体'] || ''
+                                };
+                            }
                         }
                     });
                 } catch (e) {
@@ -387,37 +404,32 @@
         };
 
         // ------------------ URL 参数获取模块 (RecordID) ------------------
-        
-        // 稳定的 Hash 函数，用于云端位置为空或解析失败时的容错兜底
-        const getMockLocation = (partName) => {
-            let hash = 0;
-            for (let i = 0; i < partName.length; i++) hash = partName.charCodeAt(i) + ((hash << 5) - hash);
-            const absHash = Math.abs(hash);
-            const isLarge = absHash % 10 < 3; 
-            const cabNum = isLarge ? (absHash % 10) + 1 : (absHash % 25) + 1;
-            const cabId = `${isLarge ? 'L' : 'S'}-${cabNum}`;
-            const row = (absHash % (isLarge ? 10 : 15)) + 1;
-            const col = ((absHash >> 2) % (isLarge ? 3 : 5)) + 1;
-            return { cabId, row, col };
-        };
 
-        // 云端数据库位置字符串解析器
-        const parseDbLocation = (locStr, partName) => {
-            if (!locStr) return getMockLocation(partName);
+        // 云端数据库位置与柜体信息解析器 (解析失败则留空分配)
+        const parseDbLocation = (cacheData) => {
+            if (!cacheData || (!cacheData.loc && !cacheData.type)) {
+                return { cabId: '未分配', row: 0, col: 0, rawStr: '暂无库位信息' };
+            }
             
-            const str = String(locStr).trim();
-            const isLarge = str.includes('大') || str.toUpperCase().startsWith('L');
+            const locStr = String(cacheData.loc).trim();
+            const typeStr = String(cacheData.type).trim();
             
-            // 提取字符串中的前三个数字 (柜号-行-列)
-            const nums = str.match(/\d+/g);
+            // 判定大小柜
+            const isLarge = typeStr === '大' || locStr.includes('大') || locStr.toUpperCase().startsWith('L');
+            
+            // 提取位置数字 (例如 "1-2-3" 或 "1柜-2行-3列")
+            const nums = locStr.match(/\d+/g);
             if (nums && nums.length >= 3) {
                 return {
                     cabId: `${isLarge ? 'L' : 'S'}-${nums[0]}`,
                     row: parseInt(nums[1]),
-                    col: parseInt(nums[2])
+                    col: parseInt(nums[2]),
+                    rawStr: `${isLarge ? '大柜' : '小柜'} ${locStr}`
                 };
             }
-            return getMockLocation(partName); // 如果格式异常，则返回稳定 Hash 兜底
+            
+            // 格式异常或不完整的记录留空
+            return { cabId: '未分配', row: 0, col: 0, rawStr: `位置异常: ${typeStr} ${locStr}` };
         };
 
         const fetchRecordFromURL = async () => {
@@ -488,13 +500,12 @@
                         return;
                     }
 
-                    // 【核心逻辑更新】：解析完 JSON 后，先挂起获取所有字典信息
                     if(document.getElementById('loading-status-text')) {
                         document.getElementById('loading-status-text').innerText = "正在向云端匹配位置与模型资源字典...";
                     }
 
                     const uniqueParts = [...new Set(rawList.map(part => part['启蒙件名称'] || part['颗粒名称'] || part['零件名称'] || part['name'] || '未知颗粒'))];
-                    await batchFetchCloudModelIds(uniqueParts); // <--- 等待数据全部返回再构建 Task
+                    await batchFetchCloudModelIds(uniqueParts); 
                     console.log(`[WMS Pro] 成功同步了 ${uniqueParts.length} 种颗粒的模型UUID与位置`);
 
                     let newTasks = [];
@@ -502,14 +513,14 @@
                         const partName = part['启蒙件名称'] || part['颗粒名称'] || part['零件名称'] || part['name'] || '未知颗粒';
                         const qty = part['用量'] || part['数量'] || part['qty'] || 1;
                         
-                        // 直接从刚才加载好的全局字典中拿到“位置”字符串进行解析
-                        const dbLocStr = window.GlobalLocationCache[partName];
-                        const loc = parseDbLocation(dbLocStr, partName);
+                        // 使用云端配置的位置进行解析，留空者分配为 "未分配"
+                        const dbLocData = window.GlobalLocationCache[partName];
+                        const loc = parseDbLocation(dbLocData);
                         
                         newTasks.push({
                             id: Math.random().toString(36).substr(2),
                             cabinetId: loc.cabId,
-                            rawInput: dbLocStr || '云端未配置位置', // 在UI侧边栏展示真实的位置文本
+                            rawInput: loc.rawStr, 
                             quantity: qty,
                             originalQuantity: qty,
                             row: loc.row,
@@ -526,7 +537,6 @@
                         state.isPreloading = false;
                         state.preloadProgress = 0;
                         updateUI();
-                        // (因已在上方 Await 处理完毕，移除了旧版的静默后台拉取)
                     } else {
                         alert('⚠️ 解析成功，但云端数据列表中没有有效的颗粒数据！');
                         updateUI();
@@ -870,6 +880,11 @@
             lucide.createIcons();
         };
 
+        const formatCabinetIdDisplay = (id) => {
+            if (id === '未分配') return '未分配';
+            return formatCabinetId(id);
+        };
+
         const renderSidebar = () => {
             const container = document.getElementById('sidebar-content');
             const taskListContainer = document.getElementById('task-list-container');
@@ -936,7 +951,7 @@
                                 <div ${isActive ? 'id="active-task-item"' : ''} class="group p-3 rounded-2xl border transition-all ${isActive ? 'bg-brand-500 text-white shadow-glow border-brand-500' : isDone ? 'bg-slate-50 opacity-50' : 'bg-white border-slate-200'}">
                                     <div class="flex items-center gap-3">
                                         <div class="w-6 h-6 rounded-full flex justify-center items-center text-[10px] font-bold shrink-0 ${isActive ? 'bg-white text-brand-600' : 'bg-slate-100 text-slate-500'}">${isDone ? '<i data-lucide="check" class="w-3 h-3"></i>' : idx + 1}</div>
-                                        <div class="flex-1 min-w-0"><div class="text-sm font-bold truncate">${task.partName}${task.isShortage ? '<i data-lucide="alert-triangle" class="w-3.5 h-3.5 text-red-500 inline-block ml-1 align-text-bottom"></i>' : ''}</div><div class="text-[10px] font-mono opacity-70">${formatCabinetId(task.cabinetId)}</div></div>
+                                        <div class="flex-1 min-w-0"><div class="text-sm font-bold truncate">${task.partName}${task.isShortage ? '<i data-lucide="alert-triangle" class="w-3.5 h-3.5 text-red-500 inline-block ml-1 align-text-bottom"></i>' : ''}</div><div class="text-[10px] font-mono opacity-70">${task.cabinetId === '未分配' ? '<span class="text-amber-500 font-bold">暂无库位信息</span>' : formatCabinetIdDisplay(task.cabinetId)}</div></div>
                                         ${qtyDisplayHtml}
                                     </div>
                                 </div>`
@@ -1242,7 +1257,7 @@
 
                                     return `
                                     <div class="grid grid-cols-12 px-2 py-2 md:px-3 md:py-3 items-center border-b border-slate-50 last:border-0 hover:bg-slate-50 rounded-xl transition-colors">
-                                        <div class="col-span-3 font-mono text-[10px] md:text-sm font-bold text-slate-600">${formatCabinetId(t.cabinetId)} <span class="text-[8px] md:text-xs text-slate-400 font-normal hidden sm:inline">(${t.row}-${t.col})</span></div>
+                                        <div class="col-span-3 font-mono text-[10px] md:text-sm font-bold text-slate-600">${formatCabinetIdDisplay(t.cabinetId)} <span class="text-[8px] md:text-xs text-slate-400 font-normal hidden sm:inline">${t.cabinetId !== '未分配' ? `(${t.row}-${t.col})` : ''}</span></div>
                                         <div class="col-span-5 text-[10px] md:text-sm font-bold text-slate-800 truncate pr-2">${t.partName}${shortageBadge}</div>
                                         <div class="col-span-2 text-center text-[10px] md:text-sm text-slate-400 font-mono">${t.originalQuantity}</div>
                                         <div class="col-span-2 text-right text-[10px] md:text-sm">${qtyHtml}</div>
@@ -1262,36 +1277,51 @@
                     partInfo = { name: task.partName, type: "积木", img: PART_IMAGES["积木"] };
                 }
 
-                const isLarge = task.rawInput.includes('大柜');
+                const isUnassigned = task.cabinetId === '未分配';
+                const isLarge = task.cabinetId.startsWith('L-');
                 const rows = isLarge ? 10 : 15, cols = isLarge ? 3 : 5;
 
                 if (state.mainView === 'cabinet') {
                     const tasksInCabinet = state.pickingTasks.filter(t => t.cabinetId === task.cabinetId);
 
                     let gridHtml = '';
-                    for(let r=1; r<=rows; r++) {
-                        for(let c=1; c<=cols; c++) {
-                            const isCurrentTarget = (r === task.row && c === task.col);
-                            const relatedTasks = tasksInCabinet.filter(t => t.row === r && t.col === c);
-                            const isOtherTarget = !isCurrentTarget && relatedTasks.length > 0;
-                            
-                            let cellClass = 'bg-slate-50/80 border border-slate-200/60 text-slate-300 text-[10px] md:text-xs font-medium';
-                            let cellContent = '<span class="opacity-30">·</span>';
+                    let gridStyle = '';
 
-                            if (isCurrentTarget) {
-                                cellClass = 'bg-gradient-to-b from-orange-400 to-orange-500 text-white shadow-lg shadow-orange-500/40 scale-[1.15] z-10 font-black text-xs md:text-xl border border-white/80 ring-4 ring-orange-500/20';
-                                cellContent = `${r}-${c}`;
-                            } else if (isOtherTarget) {
-                                const isAllDone = relatedTasks.every(t => state.pickingTasks.findIndex(pt => pt.id === t.id) < state.currentTaskIndex);
-                                if (isAllDone) {
-                                    cellClass = 'bg-emerald-50 border border-emerald-200 text-emerald-500 text-[10px] md:text-sm font-bold opacity-80';
-                                } else {
-                                    cellClass = 'bg-brand-50 border-2 border-brand-400 text-brand-600 text-[10px] md:text-sm font-black shadow-sm scale-[1.05] z-0';
+                    if (isUnassigned) {
+                        gridHtml = `
+                            <div class="col-span-full flex flex-col items-center justify-center text-slate-400 h-full w-full py-8 text-center bg-white/50 rounded-xl">
+                                <i data-lucide="package-x" class="w-12 h-12 mb-3 opacity-30 text-slate-500"></i>
+                                <p class="text-sm font-black text-slate-500">该零件暂无物理库位信息</p>
+                                <p class="text-[10px] mt-1 font-bold">系统无法提供网格指引，请人工核对或留空</p>
+                            </div>`;
+                        gridStyle = `display: flex; width: 100%; height: 100%; align-items: center; justify-content: center;`;
+                    } else {
+                        gridStyle = `display: grid; grid-template-rows: repeat(${rows}, minmax(0, 1fr)); grid-template-columns: repeat(${cols}, minmax(0, 1fr)); width: 100%; height: 100%; gap: 2px;`;
+                        
+                        for(let r=1; r<=rows; r++) {
+                            for(let c=1; c<=cols; c++) {
+                                const isCurrentTarget = (r === task.row && c === task.col);
+                                const relatedTasks = tasksInCabinet.filter(t => t.row === r && t.col === c);
+                                const isOtherTarget = !isCurrentTarget && relatedTasks.length > 0;
+                                
+                                let cellClass = 'bg-slate-50/80 border border-slate-200/60 text-slate-300 text-[10px] md:text-xs font-medium';
+                                let cellContent = '<span class="opacity-30">·</span>';
+
+                                if (isCurrentTarget) {
+                                    cellClass = 'bg-gradient-to-b from-orange-400 to-orange-500 text-white shadow-lg shadow-orange-500/40 scale-[1.15] z-10 font-black text-xs md:text-xl border border-white/80 ring-4 ring-orange-500/20';
+                                    cellContent = `${r}-${c}`;
+                                } else if (isOtherTarget) {
+                                    const isAllDone = relatedTasks.every(t => state.pickingTasks.findIndex(pt => pt.id === t.id) < state.currentTaskIndex);
+                                    if (isAllDone) {
+                                        cellClass = 'bg-emerald-50 border border-emerald-200 text-emerald-500 text-[10px] md:text-sm font-bold opacity-80';
+                                    } else {
+                                        cellClass = 'bg-brand-50 border-2 border-brand-400 text-brand-600 text-[10px] md:text-sm font-black shadow-sm scale-[1.05] z-0';
+                                    }
+                                    cellContent = `${r}-${c}`;
                                 }
-                                cellContent = `${r}-${c}`;
-                            }
 
-                            gridHtml += `<div class="rounded flex justify-center items-center font-mono transition-all duration-500 ${cellClass}">${cellContent}</div>`;
+                                gridHtml += `<div class="rounded flex justify-center items-center font-mono transition-all duration-500 ${cellClass}">${cellContent}</div>`;
+                            }
                         }
                     }
 
@@ -1307,7 +1337,6 @@
                         diffIndicatorHtml = `<div class="h-3 md:h-5 flex items-center justify-center mt-0.5 md:mt-1"><div class="text-amber-400/90 text-[9px] md:text-[10px] font-bold bg-amber-400/10 px-1.5 py-0.5 rounded-full flex items-center gap-0.5"><i data-lucide="minus" class="w-2.5 h-2.5 md:w-3 md:h-3"></i>${Math.abs(diff)} 减少</div></div>`;
                     }
 
-                    const gridStyle = `display: grid; grid-template-rows: repeat(${rows}, minmax(0, 1fr)); grid-template-columns: repeat(${cols}, minmax(0, 1fr)); width: 100%; height: 100%; gap: 2px;`;
                     const totalProgressPercent = Math.round(((state.currentTaskIndex + 1) / state.pickingTasks.length) * 100);
 
                     container.innerHTML = `
@@ -1329,10 +1358,10 @@
                                 <div class="glass-panel rounded-[1.5rem] md:rounded-[2rem] p-3 md:p-6 flex flex-col relative flex-1 min-h-0">
                                     <div class="flex justify-between items-start mb-2 md:mb-4 shrink-0">
                                         <div class="flex items-center gap-2 md:gap-3">
-                                            <h3 class="text-3xl md:text-4xl font-black text-slate-900 tracking-tight">${formatCabinetId(task.cabinetId)}</h3>
-                                            <div class="bg-slate-100 text-slate-500 text-[10px] md:text-xs px-2 py-1 rounded-md font-mono border border-slate-200/50">${rows}x${cols}</div>
+                                            <h3 class="text-3xl md:text-4xl font-black text-slate-900 tracking-tight">${formatCabinetIdDisplay(task.cabinetId)}</h3>
+                                            <div class="bg-slate-100 text-slate-500 text-[10px] md:text-xs px-2 py-1 rounded-md font-mono border border-slate-200/50">${isUnassigned ? '<span class="text-amber-500 font-bold">留空</span>' : `${rows}x${cols}`}</div>
                                         </div>
-                                        <button onclick="switchMainView('map')" class="bg-brand-50 text-brand-600 px-3 py-1.5 md:px-4 md:py-2.5 rounded-xl font-bold text-[10px] md:text-xs flex items-center gap-1.5 hover:bg-brand-100 transition border border-brand-100 shadow-sm">
+                                        <button onclick="switchMainView('map')" class="bg-brand-50 text-brand-600 px-3 py-1.5 md:px-4 md:py-2.5 rounded-xl font-bold text-[10px] md:text-xs flex items-center gap-1.5 hover:bg-brand-100 transition border border-brand-100 shadow-sm" ${isUnassigned ? 'disabled style="opacity: 0.5; cursor: not-allowed;"' : ''}>
                                             <i data-lucide="map" class="w-3 h-3 md:w-4 md:h-4"></i> 查看导航
                                         </button>
                                     </div>
@@ -1515,6 +1544,11 @@
         const startGuidance = () => { 
             if(state.pickingTasks.length){ 
                 state.pickingTasks.sort((a, b) => {
+                    // 将未分配的颗粒强制排序到作业的最后
+                    if (a.cabinetId === '未分配' && b.cabinetId !== '未分配') return 1;
+                    if (a.cabinetId !== '未分配' && b.cabinetId === '未分配') return -1;
+                    if (a.cabinetId === '未分配' && b.cabinetId === '未分配') return 0;
+
                     const [typeA, numStrA] = a.cabinetId.split('-');
                     const [typeB, numStrB] = b.cabinetId.split('-');
                     if (typeA !== typeB) return typeA === 'S' ? -1 : 1; 
