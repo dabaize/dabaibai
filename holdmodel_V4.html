@@ -207,7 +207,6 @@
                         stock: Math.floor(Math.random() * 100) + 10
                     });
                 }
-                // displayId 直接生成包含中文的完整名称
                 const fullDisplayId = (type === 'large' ? '大柜' : '小柜') + numId;
                 return { id, displayId: fullDisplayId, type, x, y, inventory: partsInCabinet, defaultPart: partsInCabinet[0].name };
             };
@@ -241,6 +240,7 @@
         // 全局核心状态
         const state = { 
             pickingTasks: [], 
+            drawingName: null,  // 图纸名称
             isGuiding: false, 
             currentTaskIndex: 0, 
             mainView: 'cabinet',
@@ -254,9 +254,8 @@
         // ------------------ 云端查询与模型加载预处理服务 ------------------
         
         window.GlobalModelCache = {}; 
-        window.GlobalModelIdCache = {}; // 颗粒名称 -> UUID 的全局映射缓存
+        window.GlobalModelIdCache = {}; 
 
-        // 批量获取模型 UUID (每200个分批请求 dbOperation)
         const batchFetchCloudModelIds = async (partNames) => {
             if (!partNames || partNames.length === 0) return;
             
@@ -265,7 +264,6 @@
             
             for (let i = 0; i < partNames.length; i += chunkSize) {
                 const chunk = partNames.slice(i, i + chunkSize);
-                // 构造对应的占位符 (?, ?, ?)
                 const placeholders = chunk.map(() => '?').join(',');
                 const query = `SELECT 颗粒名称, UUID FROM IT_GBase WHERE 颗粒名称 IN (${placeholders})`;
                 
@@ -282,7 +280,6 @@
                     const data = await res.json();
                     const records = data.data || data.result || [];
                     
-                    // 将查询到的 UUID 注入全局字典缓存
                     records.forEach(record => {
                         if (record['颗粒名称'] && record['UUID']) {
                             window.GlobalModelIdCache[record['颗粒名称']] = record['UUID'];
@@ -294,7 +291,6 @@
             }
         };
 
-        // 单条查询函数 (优先从缓存取，未命中则触发批量函数执行单条兜底)
         const fetchCloudModelId = async (partName) => {
             if (window.GlobalModelIdCache[partName]) {
                 return window.GlobalModelIdCache[partName];
@@ -348,7 +344,6 @@
 
             const uniqueParts = [...new Set(state.pickingTasks.map(t => t.partName))];
             
-            // 预先批量拉取缺失的 UUID
             const missingUuids = uniqueParts.filter(p => !window.GlobalModelIdCache[p]);
             if (missingUuids.length > 0) {
                 await batchFetchCloudModelIds(missingUuids);
@@ -385,6 +380,114 @@
             state.isPreloading = false;
             state.modelsPreloaded = true;
             updateUI();
+        };
+
+        // ------------------ URL 参数获取模块 (RecordID) ------------------
+        
+        // 由于API本身不返回柜子库位数据，采用确定的 Hash 函数来稳定分配一个模拟库位
+        const getMockLocation = (partName) => {
+            let hash = 0;
+            for (let i = 0; i < partName.length; i++) hash = partName.charCodeAt(i) + ((hash << 5) - hash);
+            const absHash = Math.abs(hash);
+            const isLarge = absHash % 10 < 3; // 30%分配到大柜
+            const cabNum = isLarge ? (absHash % 10) + 1 : (absHash % 25) + 1;
+            const cabId = `${isLarge ? 'L' : 'S'}-${cabNum}`;
+            const row = (absHash % (isLarge ? 10 : 15)) + 1;
+            const col = ((absHash >> 2) % (isLarge ? 3 : 5)) + 1;
+            return { cabId, row, col };
+        };
+
+        const fetchRecordFromURL = async () => {
+            const urlParams = new URLSearchParams(window.location.search);
+            const recordID = urlParams.get('RecordID');
+            if (!recordID) return;
+
+            // 呈现云端加载UI
+            const container = document.getElementById('dashboard-container');
+            if(container) {
+                container.innerHTML = `
+                    <div class="flex flex-col items-center justify-center w-full h-full glass-panel rounded-[2rem] animate-pulse">
+                        <i data-lucide="cloud-download" class="w-12 h-12 text-brand-500 mb-4 opacity-80"></i>
+                        <h3 class="text-xl font-black text-slate-800 tracking-tight mb-1">正在同步云端工单数据...</h3>
+                        <p class="text-xs font-mono text-slate-400">RecordID: ${recordID}</p>
+                    </div>
+                `;
+                lucide.createIcons();
+            }
+
+            try {
+                const API_ENDPOINT = 'https://stateless.unity.cn/release/2e87e2f7-8488-4b42-9a17-a4dce04e1ec3/CloudPath';
+                const response = await fetch(API_ENDPOINT, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        action: 'getRecords',
+                        BitableUUID: 'BitableUUID084',
+                        filter: {
+                            conjunction: "and",
+                            conditions: [
+                                {
+                                    field_name: "record_id",
+                                    operator: "is",
+                                    value: [recordID]
+                                }
+                            ]
+                        }
+                    })
+                });
+
+                const data = await response.json();
+                
+                if (data.code === 0 && data.data && data.data.items && data.data.items.length > 0) {
+                    const record = data.data.items[0];
+                    const drawingName = record.fields['图纸名称'] ? record.fields['图纸名称'][0].text : '未知图纸';
+                    const listStr = record.fields['拾件列表'] ? record.fields['拾件列表'][0].text : '[]';
+                    const rawList = JSON.parse(listStr);
+
+                    let newTasks = [];
+                    rawList.forEach(part => {
+                        // 使用 Hash 函数为没有库位的数据分配稳定位置
+                        const mockLoc = getMockLocation(part['启蒙件名称']);
+                        
+                        newTasks.push({
+                            id: Math.random().toString(36).substr(2),
+                            cabinetId: mockLoc.cabId,
+                            rawInput: '云端指派',
+                            quantity: part['用量'],
+                            originalQuantity: part['用量'],
+                            row: mockLoc.row,
+                            col: mockLoc.col,
+                            partName: part['启蒙件名称'],
+                            isShortage: false
+                        });
+                    });
+
+                    if (newTasks.length > 0) {
+                        state.pickingTasks = newTasks;
+                        state.drawingName = drawingName;
+                        state.modelsPreloaded = false;
+                        state.isPreloading = false;
+                        state.preloadProgress = 0;
+                        updateUI();
+                        
+                        // 后台静默发起批量 UUID 请求
+                        const uniqueParts = [...new Set(newTasks.map(t => t.partName))];
+                        batchFetchCloudModelIds(uniqueParts).then(() => {
+                            console.log(`[WMS Pro] 成功批量拉取了 ${uniqueParts.length} 种颗粒的 UUID 缓存 (云端工单)`);
+                        });
+                    } else {
+                        alert('⚠️ 获取的云端拾件列表为空！');
+                        updateUI();
+                    }
+                } else {
+                    alert('⚠️ 未找到对应的 Record 数据或服务器返回异常！');
+                    updateUI();
+                }
+            } catch (e) {
+                console.error(e);
+                alert('⚠️ 从云端获取数据失败，请检查网络连接。');
+                updateUI();
+            }
         };
 
         // ------------------ 3D 渲染器核心机制 (全量序列展示) ------------------
@@ -435,7 +538,7 @@
             const controls = new THREE.OrbitControls(camera, renderer.domElement);
             controls.enableDamping = true;
             controls.enableZoom = true;
-            controls.autoRotate = false; // 禁用全局自转，改用传送带移动
+            controls.autoRotate = false;
 
             const ambientLight = new THREE.AmbientLight(0xffffff, 0.8);
             scene.add(ambientLight);
@@ -450,7 +553,6 @@
             const darkMat = new THREE.MeshStandardMaterial({ color: 0x334155, metalness: 0.6, roughness: 0.4 });
             const pcbMat = new THREE.MeshStandardMaterial({ color: 0x10b981, metalness: 0.2, roughness: 0.8 });
 
-            // 动态拉取当前模型确保绝对展示
             if (!window.GlobalModelCache[partName]) {
                 const uuid = await fetchCloudModelId(partName);
                 if (session !== currentRenderSession) return;
@@ -470,9 +572,8 @@
                 }
             }
 
-            // 构建传送带全局组
             const carouselGroup = new THREE.Group();
-            const SPACING = 3.5; // 模型间距
+            const SPACING = 3.5; 
 
             state.pickingTasks.forEach((t, idx) => {
                 let modelWrapper = new THREE.Group();
@@ -495,7 +596,6 @@
                 const isPast = idx < state.currentTaskIndex;
 
                 if (!isCurrent) {
-                    // 对非当前任务施加褪色/半透明处理
                     const dimMat = new THREE.MeshStandardMaterial({
                         color: isPast ? 0x94a3b8 : 0xe2e8f0,
                         metalness: 0.1,
@@ -506,12 +606,11 @@
                     modelWrapper.traverse((child) => {
                         if (child.isMesh) child.material = dimMat;
                     });
-                    modelWrapper.scale.setScalar(0.65); // 缩小比例
-                    modelWrapper.position.y = -0.5; // 稍微下沉
+                    modelWrapper.scale.setScalar(0.65); 
+                    modelWrapper.position.y = -0.5; 
                 } else {
-                    modelWrapper.scale.setScalar(1.2); // 放大当前展示
+                    modelWrapper.scale.setScalar(1.2); 
                     
-                    // 底部光环特效
                     const ringGeometry = new THREE.RingGeometry( 1.1, 1.3, 32 );
                     const ringMat = new THREE.MeshBasicMaterial({ color: 0x6366f1, side: THREE.DoubleSide, transparent: true, opacity: 0.7 });
                     const ring = new THREE.Mesh(ringGeometry, ringMat);
@@ -519,7 +618,6 @@
                     ring.position.y = -1.0;
                     modelWrapper.add(ring);
 
-                    // 自身自转标识
                     modelWrapper.userData.isCurrent = true;
                 }
 
@@ -527,7 +625,6 @@
                 carouselGroup.add(modelWrapper);
             });
 
-            // 核心: 将传送带偏移，使当前模型位于 0,0,0
             carouselGroup.position.x = -state.currentTaskIndex * SPACING;
             scene.add(carouselGroup);
 
@@ -538,7 +635,6 @@
                 current3DAnimId = requestAnimationFrame(animate);
                 controls.update();
                 
-                // 让当前高亮的模型自身轻轻自转
                 carouselGroup.children.forEach(child => {
                     if (child.userData.isCurrent) {
                         child.rotation.y += 0.01;
@@ -656,12 +752,12 @@
 
                 if (newTasks.length > 0) {
                     state.pickingTasks = newTasks;
+                    state.drawingName = null; // 清除云端图纸名缓存
                     state.modelsPreloaded = false;
                     state.isPreloading = false;
                     state.preloadProgress = 0;
                     updateUI();
                     
-                    // 【新增】：在后台静默发起批量请求，预先拉取当前批次所有的模型 UUID 并缓存
                     const uniqueParts = [...new Set(newTasks.map(t => t.partName))];
                     batchFetchCloudModelIds(uniqueParts).then(() => {
                         console.log(`[WMS Pro] 成功批量拉取了 ${uniqueParts.length} 种颗粒的 UUID 缓存`);
@@ -1293,7 +1389,7 @@
                             <div class="glass-panel rounded-[2rem] border-dashed border-2 flex flex-col items-center justify-center text-slate-400 flex-1 min-h-[300px]">
                                 <i data-lucide="file-spreadsheet" class="w-12 h-12 text-brand-500 mb-4 opacity-50"></i>
                                 <h3 class="text-lg font-black text-slate-700 mb-2">导入拣货清单</h3>
-                                <p class="text-xs font-bold tracking-widest uppercase mb-6">请上传包含位置信息的 Excel 文件</p>
+                                <p class="text-xs font-bold tracking-widest uppercase mb-6">请上传包含位置信息的 Excel 文件或扫描作业二维码</p>
                                 <button onclick="document.getElementById('excel-upload').click()" class="bg-brand-500 text-white px-6 py-3 rounded-xl font-bold text-sm shadow-glow hover:bg-brand-600 transition-colors flex items-center gap-2">
                                     <i data-lucide="upload" class="w-4 h-4"></i> 选择 Excel 文件
                                 </button>
@@ -1341,14 +1437,18 @@
                         `;
                     }
 
+                    // 加入针对图纸名称的标题展示逻辑
+                    const mainTitleText = state.drawingName ? `图纸: ${state.drawingName}` : `已成功读取 ${state.pickingTasks.length} 项任务`;
+                    const subTitleText = state.drawingName ? `云端同步完成，共计 ${state.pickingTasks.length} 种零件颗粒。` : `您可以选择一键预加载所有云端模型资源，确保作业过程中完全零卡顿。`;
+
                     container.innerHTML = `
                         <div class="flex flex-col md:flex-row gap-4 w-full h-full">
                             <div class="glass-panel rounded-[2rem] border-2 border-brand-100 flex flex-col items-center justify-center text-slate-600 flex-1 min-h-[300px] bg-brand-50/40 px-4 py-8">
                                 <div class="w-16 h-16 bg-white rounded-full flex items-center justify-center mb-4 shadow-sm border border-brand-100 text-brand-500">
                                     <i data-lucide="list-checks" class="w-8 h-8"></i>
                                 </div>
-                                <h3 class="text-xl md:text-2xl font-black text-slate-800 mb-2 tracking-tight text-center">已成功读取 ${state.pickingTasks.length} 项任务</h3>
-                                <p class="text-xs font-medium text-slate-500 mb-6 text-center max-w-sm">您可以选择一键预加载所有云端模型资源，确保作业过程中完全零卡顿。</p>
+                                <h3 class="text-xl md:text-2xl font-black text-slate-800 mb-2 tracking-tight text-center">${mainTitleText}</h3>
+                                <p class="text-xs font-medium text-slate-500 mb-6 text-center max-w-sm">${subTitleText}</p>
                                 ${actionAreaHtml}
                             </div>
                             <div class="flex-1 w-full min-h-[300px] glass-panel rounded-[2rem] overflow-hidden flex items-center justify-center opacity-90 relative" id="map-container">
@@ -1438,6 +1538,7 @@
 
                 state.isGuiding = false; 
                 state.pickingTasks = [];
+                state.drawingName = null;
                 state.completedReport = report;
                 state.mainView = 'report'; 
                 updateUI(); 
@@ -1464,10 +1565,8 @@
         }, { passive: true });
 
         document.addEventListener('touchend', (e) => {
-            // 仅在指导作业中，且停留在柜子主视图时才允许滑动切换
             if (!state.isGuiding || state.mainView !== 'cabinet') return;
 
-            // 智能避让：如果在 3D 预览图（需旋转模型）或 任务列表（需上下滚动）滑动，则不触发步骤切换
             if (swipeTarget && (swipeTarget.closest('#part-3d-viewer') || swipeTarget.closest('#task-list-container'))) {
                 return;
             }
@@ -1479,13 +1578,10 @@
                 let deltaY = touchStartY - touchEndY;
                 let deltaX = Math.abs(touchStartX - touchEndX);
 
-                // 判定为有效的垂直滑动（垂直距离大于 50 像素，且垂直位移大于水平位移防误触）
                 if (Math.abs(deltaY) > 50 && Math.abs(deltaY) > deltaX) {
                     if (deltaY < 0) {
-                        // 向下滑动 -> 执行下一步
                         nextGuidanceStep();
                     } else {
-                        // 向上滑动 -> 执行上一步
                         prevGuidanceStep();
                     }
                 }
@@ -1493,7 +1589,12 @@
         }, { passive: true });
 
         document.addEventListener('DOMContentLoaded', () => {
-            updateUI();
+            const urlParams = new URLSearchParams(window.location.search);
+            if (urlParams.has('RecordID')) {
+                fetchRecordFromURL();
+            } else {
+                updateUI();
+            }
         });
 
     </script>
