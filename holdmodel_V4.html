@@ -440,24 +440,51 @@
                 
                 if (data.code === 0 && data.data && data.data.items && data.data.items.length > 0) {
                     const record = data.data.items[0];
-                    const drawingName = record.fields['图纸名称'] ? record.fields['图纸名称'][0].text : '未知图纸';
-                    const listStr = record.fields['拾件列表'] ? record.fields['拾件列表'][0].text : '[]';
-                    const rawList = JSON.parse(listStr);
+                    
+                    // 增强型解析函数：处理多维表格返回的多种数据结构 (字符串、对象数组、分段富文本)
+                    const extractFieldText = (fieldData) => {
+                        if (!fieldData) return '';
+                        if (typeof fieldData === 'string') return fieldData;
+                        if (Array.isArray(fieldData)) {
+                            return fieldData.map(item => typeof item === 'object' ? (item.text || '') : String(item)).join('');
+                        }
+                        if (typeof fieldData === 'object') return fieldData.text || '';
+                        return String(fieldData);
+                    };
+
+                    const drawingName = extractFieldText(record.fields['图纸名称']) || '未知图纸';
+                    const listStr = extractFieldText(record.fields['拾件列表']) || '[]';
+                    
+                    let rawList = [];
+                    try {
+                        // 清理可能存在的零宽字符等不可见字符防报错
+                        const cleanStr = listStr.replace(/[\u200B-\u200D\uFEFF]/g, '').trim();
+                        rawList = JSON.parse(cleanStr);
+                    } catch (err) {
+                        console.error('JSON Parsing Error:', err, 'Raw String:', listStr);
+                        alert('⚠️ 云端数据的 [拾件列表] 格式无法解析为标准 JSON，请检查数据源！');
+                        updateUI();
+                        return;
+                    }
 
                     let newTasks = [];
                     rawList.forEach(part => {
+                        // 兼容多种字段名的防错提取
+                        const partName = part['启蒙件名称'] || part['颗粒名称'] || part['零件名称'] || part['name'] || '未知颗粒';
+                        const qty = part['用量'] || part['数量'] || part['qty'] || 1;
+                        
                         // 使用 Hash 函数为没有库位的数据分配稳定位置
-                        const mockLoc = getMockLocation(part['启蒙件名称']);
+                        const mockLoc = getMockLocation(partName);
                         
                         newTasks.push({
                             id: Math.random().toString(36).substr(2),
                             cabinetId: mockLoc.cabId,
                             rawInput: '云端指派',
-                            quantity: part['用量'],
-                            originalQuantity: part['用量'],
+                            quantity: qty,
+                            originalQuantity: qty,
                             row: mockLoc.row,
                             col: mockLoc.col,
-                            partName: part['启蒙件名称'],
+                            partName: partName,
                             isShortage: false
                         });
                     });
@@ -476,7 +503,7 @@
                             console.log(`[WMS Pro] 成功批量拉取了 ${uniqueParts.length} 种颗粒的 UUID 缓存 (云端工单)`);
                         });
                     } else {
-                        alert('⚠️ 获取的云端拾件列表为空！');
+                        alert('⚠️ 解析成功，但云端拾件列表中没有有效的颗粒数据！');
                         updateUI();
                     }
                 } else {
