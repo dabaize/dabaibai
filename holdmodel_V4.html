@@ -89,11 +89,36 @@
             animation: float 6s ease-in-out infinite;
             transform-style: preserve-3d;
         }
+
+        /* 手机横屏提示动画与样式 */
+        @keyframes phone-rotate {
+            0%, 20% { transform: rotate(-90deg); }
+            40%, 60% { transform: rotate(0deg); }
+            80%, 100% { transform: rotate(-90deg); }
+        }
+        .animate-phone-rotate {
+            animation: phone-rotate 2.5s ease-in-out infinite;
+        }
+        @media screen and (max-width: 1024px) and (orientation: landscape) and (pointer: coarse) {
+            #landscape-overlay {
+                display: flex !important;
+            }
+        }
         
         svg text { user-select: none; }
     </style>
 </head>
 <body class="h-[100dvh] w-screen overflow-hidden text-slate-800 flex flex-col md:flex-row box-border relative select-none md:select-auto">
+
+    <!-- 强制竖屏引导遮罩层 -->
+    <div id="landscape-overlay" class="fixed inset-0 z-[9999] bg-slate-900/95 backdrop-blur-md flex-col items-center justify-center text-white hidden transition-all duration-300">
+        <div class="relative w-24 h-24 flex items-center justify-center mb-4">
+            <div class="absolute inset-0 bg-brand-500 rounded-full opacity-20 animate-ping"></div>
+            <i data-lucide="smartphone" class="w-14 h-14 text-brand-400 animate-phone-rotate"></i>
+        </div>
+        <h2 class="text-2xl font-black mb-2 tracking-tight">请竖屏操作</h2>
+        <p class="text-slate-400 text-sm font-medium">为了获得最佳的作业体验，请旋转您的手机</p>
+    </div>
 
     <!-- 隐藏的 File Input -->
     <input type="file" id="excel-upload" accept=".xlsx, .xls, .csv" class="hidden" onchange="handleExcelUpload(event)">
