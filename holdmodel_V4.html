@@ -254,29 +254,53 @@
         // ------------------ 云端查询与模型加载预处理服务 ------------------
         
         window.GlobalModelCache = {}; 
+        window.GlobalModelIdCache = {}; // 颗粒名称 -> UUID 的全局映射缓存
 
-        const fetchCloudModelId = async (partName) => {
+        // 批量获取模型 UUID (每200个分批请求 dbOperation)
+        const batchFetchCloudModelIds = async (partNames) => {
+            if (!partNames || partNames.length === 0) return;
+            
             const API_ENDPOINT = 'https://stateless.unity.cn/release/2e87e2f7-8488-4b42-9a17-a4dce04e1ec3/CloudPath';
-            try {
-                const res = await fetch(API_ENDPOINT, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        action: 'commonSqlGet',
-                        tableName: 'IT_GBase',
-                        filter: { '颗粒名称': { op: '=', val: partName } },
-                        fields: ['UUID']
-                    })
-                });
-                const data = await res.json();
-                const records = data.data || data.result || [];
-                if (records.length > 0 && records[0].UUID) {
-                    return records[0].UUID;
+            const chunkSize = 200;
+            
+            for (let i = 0; i < partNames.length; i += chunkSize) {
+                const chunk = partNames.slice(i, i + chunkSize);
+                // 构造对应的占位符 (?, ?, ?)
+                const placeholders = chunk.map(() => '?').join(',');
+                const query = `SELECT 颗粒名称, UUID FROM IT_GBase WHERE 颗粒名称 IN (${placeholders})`;
+                
+                try {
+                    const res = await fetch(API_ENDPOINT, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            action: 'dbOperation',
+                            query: query,
+                            queryParams: chunk
+                        })
+                    });
+                    const data = await res.json();
+                    const records = data.data || data.result || [];
+                    
+                    // 将查询到的 UUID 注入全局字典缓存
+                    records.forEach(record => {
+                        if (record['颗粒名称'] && record['UUID']) {
+                            window.GlobalModelIdCache[record['颗粒名称']] = record['UUID'];
+                        }
+                    });
+                } catch (e) {
+                    console.error("Batch API Fetch Error:", e);
                 }
-            } catch (e) {
-                console.error("API Fetch Error:", e);
             }
-            return null;
+        };
+
+        // 单条查询函数 (优先从缓存取，未命中则触发批量函数执行单条兜底)
+        const fetchCloudModelId = async (partName) => {
+            if (window.GlobalModelIdCache[partName]) {
+                return window.GlobalModelIdCache[partName];
+            }
+            await batchFetchCloudModelIds([partName]);
+            return window.GlobalModelIdCache[partName] || null;
         };
 
         const loadModelAsset = (url, type) => {
@@ -324,11 +348,17 @@
 
             const uniqueParts = [...new Set(state.pickingTasks.map(t => t.partName))];
             
+            // 预先批量拉取缺失的 UUID
+            const missingUuids = uniqueParts.filter(p => !window.GlobalModelIdCache[p]);
+            if (missingUuids.length > 0) {
+                await batchFetchCloudModelIds(missingUuids);
+            }
+            
             for (let i = 0; i < uniqueParts.length; i++) {
                 const partName = uniqueParts[i];
                 
                 if (!window.GlobalModelCache[partName]) {
-                    const uuid = await fetchCloudModelId(partName);
+                    const uuid = window.GlobalModelIdCache[partName];
                     if (uuid) {
                         const CDN_BASE = 'https://a.unity.cn/client_api/v1/buckets/181aa46a-4b2b-41d9-9765-38454415dee3/content/简模/';
                         let loadedModel = null;
@@ -630,6 +660,13 @@
                     state.isPreloading = false;
                     state.preloadProgress = 0;
                     updateUI();
+                    
+                    // 【新增】：在后台静默发起批量请求，预先拉取当前批次所有的模型 UUID 并缓存
+                    const uniqueParts = [...new Set(newTasks.map(t => t.partName))];
+                    batchFetchCloudModelIds(uniqueParts).then(() => {
+                        console.log(`[WMS Pro] 成功批量拉取了 ${uniqueParts.length} 种颗粒的 UUID 缓存`);
+                    });
+
                 } else {
                     alert("⚠️ 未在文件中找到有效的位置数据，请检查文件格式是否匹配（D列小柜，F列大柜）！");
                 }
@@ -842,7 +879,6 @@
 
             const cabinetsSvg = CABINETS.map(cab => {
                 const pos = toSvg(cab.x, cab.y);
-                // 适当放大柜子的物理宽高以容纳中文字符
                 const w = cab.type === 'large' ? 56 : 42;
                 const h = cab.type === 'large' ? 26 : 20;
                 const isTarget = activeTargets.find(t => t.id === cab.id);
@@ -1082,7 +1118,6 @@
                 const rows = isLarge ? 10 : 15, cols = isLarge ? 3 : 5;
 
                 if (state.mainView === 'cabinet') {
-                    // 获取当前柜子所有的待取任务
                     const tasksInCabinet = state.pickingTasks.filter(t => t.cabinetId === task.cabinetId);
 
                     let gridHtml = '';
@@ -1092,22 +1127,17 @@
                             const relatedTasks = tasksInCabinet.filter(t => t.row === r && t.col === c);
                             const isOtherTarget = !isCurrentTarget && relatedTasks.length > 0;
                             
-                            // 优化：基础空网格采用更通透、更干净的浅灰色质感
                             let cellClass = 'bg-slate-50/80 border border-slate-200/60 text-slate-300 text-[10px] md:text-xs font-medium';
                             let cellContent = '<span class="opacity-30">·</span>';
 
                             if (isCurrentTarget) {
-                                // 优化：当前目标采用微渐变橙色、纯白内边框与发光光晕，立体感与聚焦感拉满
                                 cellClass = 'bg-gradient-to-b from-orange-400 to-orange-500 text-white shadow-lg shadow-orange-500/40 scale-[1.15] z-10 font-black text-xs md:text-xl border border-white/80 ring-4 ring-orange-500/20';
                                 cellContent = `${r}-${c}`;
                             } else if (isOtherTarget) {
-                                // 检查该位置的目标是否已经拾取完毕
                                 const isAllDone = relatedTasks.every(t => state.pickingTasks.findIndex(pt => pt.id === t.id) < state.currentTaskIndex);
                                 if (isAllDone) {
-                                    // 优化：已完成的目标采用柔和的薄荷绿，并带有半透明呼吸感
                                     cellClass = 'bg-emerald-50 border border-emerald-200 text-emerald-500 text-[10px] md:text-sm font-bold opacity-80';
                                 } else {
-                                    // 优化：列表中同柜的其他待取目标，采用清晰的品牌蓝加粗边框，类似待按压的按钮
                                     cellClass = 'bg-brand-50 border-2 border-brand-400 text-brand-600 text-[10px] md:text-sm font-black shadow-sm scale-[1.05] z-0';
                                 }
                                 cellContent = `${r}-${c}`;
@@ -1135,7 +1165,6 @@
                     container.innerHTML = `
                         <div class="flex flex-col w-full h-full overflow-hidden pb-1 md:pb-0">
                             
-                            <!-- 全局拾件进度条 -->
                             <div class="w-full shrink-0 mb-3 px-1 md:px-0">
                                 <div class="flex justify-between items-center text-[10px] md:text-xs font-bold text-slate-500 tracking-widest mb-1.5">
                                     <span>整体拾件进度</span>
@@ -1146,7 +1175,6 @@
                                 </div>
                             </div>
 
-                            <!-- 核心修改：将 flex-col 改为 flex-col-reverse，使移动端模型操作区在上方，柜子在下方 -->
                             <div class="flex flex-col-reverse md:flex-row gap-3 md:gap-4 flex-1 min-h-0">
                                 
                                 <!-- Bottom(Mobile) / Left(Desktop): Cabinet Layout (Fully Expand) -->
