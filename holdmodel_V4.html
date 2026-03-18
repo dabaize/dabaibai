@@ -255,6 +255,7 @@
         
         window.GlobalModelCache = {}; 
         window.GlobalModelIdCache = {}; 
+        window.GlobalLocationCache = {}; // 新增：颗粒名称 -> 云端位置 的映射缓存
 
         const batchFetchCloudModelIds = async (partNames) => {
             if (!partNames || partNames.length === 0) return;
@@ -265,7 +266,8 @@
             for (let i = 0; i < partNames.length; i += chunkSize) {
                 const chunk = partNames.slice(i, i + chunkSize);
                 const placeholders = chunk.map(() => '?').join(',');
-                const query = `SELECT 颗粒名称, UUID FROM IT_GBase WHERE 颗粒名称 IN (${placeholders})`;
+                // 将数据表名称从 IT_GBase 更新为 Design_Itempicker
+                const query = `SELECT 颗粒名称, UUID, 位置 FROM Design_Itempicker WHERE 颗粒名称 IN (${placeholders})`;
                 
                 try {
                     const res = await fetch(API_ENDPOINT, {
@@ -281,8 +283,10 @@
                     const records = data.data || data.result || [];
                     
                     records.forEach(record => {
-                        if (record['颗粒名称'] && record['UUID']) {
-                            window.GlobalModelIdCache[record['颗粒名称']] = record['UUID'];
+                        if (record['颗粒名称']) {
+                            if (record['UUID']) window.GlobalModelIdCache[record['颗粒名称']] = record['UUID'];
+                            // 存入真实的位置映射
+                            if (record['位置']) window.GlobalLocationCache[record['颗粒名称']] = record['位置'];
                         }
                     });
                 } catch (e) {
@@ -384,12 +388,12 @@
 
         // ------------------ URL 参数获取模块 (RecordID) ------------------
         
-        // 由于API本身不返回柜子库位数据，采用确定的 Hash 函数来稳定分配一个模拟库位
+        // 稳定的 Hash 函数，用于云端位置为空或解析失败时的容错兜底
         const getMockLocation = (partName) => {
             let hash = 0;
             for (let i = 0; i < partName.length; i++) hash = partName.charCodeAt(i) + ((hash << 5) - hash);
             const absHash = Math.abs(hash);
-            const isLarge = absHash % 10 < 3; // 30%分配到大柜
+            const isLarge = absHash % 10 < 3; 
             const cabNum = isLarge ? (absHash % 10) + 1 : (absHash % 25) + 1;
             const cabId = `${isLarge ? 'L' : 'S'}-${cabNum}`;
             const row = (absHash % (isLarge ? 10 : 15)) + 1;
@@ -397,12 +401,30 @@
             return { cabId, row, col };
         };
 
+        // 云端数据库位置字符串解析器
+        const parseDbLocation = (locStr, partName) => {
+            if (!locStr) return getMockLocation(partName);
+            
+            const str = String(locStr).trim();
+            const isLarge = str.includes('大') || str.toUpperCase().startsWith('L');
+            
+            // 提取字符串中的前三个数字 (柜号-行-列)
+            const nums = str.match(/\d+/g);
+            if (nums && nums.length >= 3) {
+                return {
+                    cabId: `${isLarge ? 'L' : 'S'}-${nums[0]}`,
+                    row: parseInt(nums[1]),
+                    col: parseInt(nums[2])
+                };
+            }
+            return getMockLocation(partName); // 如果格式异常，则返回稳定 Hash 兜底
+        };
+
         const fetchRecordFromURL = async () => {
             const urlParams = new URLSearchParams(window.location.search);
             const recordID = urlParams.get('RecordID');
             if (!recordID) return;
 
-            // 呈现云端加载UI
             const container = document.getElementById('dashboard-container');
             if(container) {
                 container.innerHTML = `
@@ -410,6 +432,7 @@
                         <i data-lucide="cloud-download" class="w-12 h-12 text-brand-500 mb-4 opacity-80"></i>
                         <h3 class="text-xl font-black text-slate-800 tracking-tight mb-1">正在同步云端工单数据...</h3>
                         <p class="text-xs font-mono text-slate-400">RecordID: ${recordID}</p>
+                        <p class="text-[10px] text-slate-400 mt-6" id="loading-status-text">正在提取清单结构...</p>
                     </div>
                 `;
                 lucide.createIcons();
@@ -441,7 +464,6 @@
                 if (data.code === 0 && data.data && data.data.items && data.data.items.length > 0) {
                     const record = data.data.items[0];
                     
-                    // 增强型解析函数：处理多维表格返回的多种数据结构 (兼容字符串、对象、数组)
                     const extractFieldText = (fieldData) => {
                         if (!fieldData) return '';
                         if (typeof fieldData === 'string') return fieldData;
@@ -453,40 +475,45 @@
                     };
 
                     const drawingName = extractFieldText(record.fields['图纸名称']) || '未知图纸';
-                    
-                    // 【关键修复】：兼容查找 "颗粒列表" 或者 "拾件列表"
                     const listData = record.fields['颗粒列表'] || record.fields['拾件列表'];
                     const listStr = extractFieldText(listData) || '[]';
                     
                     let rawList = [];
                     try {
-                        // 清理可能存在的零宽字符等不可见字符防报错
                         const cleanStr = listStr.replace(/[\u200B-\u200D\uFEFF]/g, '').trim();
                         rawList = JSON.parse(cleanStr);
                     } catch (err) {
-                        console.error('JSON Parsing Error:', err, 'Raw String:', listStr);
                         alert('⚠️ 云端数据的颗粒列表格式无法解析为标准 JSON，请检查数据源！');
                         updateUI();
                         return;
                     }
 
+                    // 【核心逻辑更新】：解析完 JSON 后，先挂起获取所有字典信息
+                    if(document.getElementById('loading-status-text')) {
+                        document.getElementById('loading-status-text').innerText = "正在向云端匹配位置与模型资源字典...";
+                    }
+
+                    const uniqueParts = [...new Set(rawList.map(part => part['启蒙件名称'] || part['颗粒名称'] || part['零件名称'] || part['name'] || '未知颗粒'))];
+                    await batchFetchCloudModelIds(uniqueParts); // <--- 等待数据全部返回再构建 Task
+                    console.log(`[WMS Pro] 成功同步了 ${uniqueParts.length} 种颗粒的模型UUID与位置`);
+
                     let newTasks = [];
                     rawList.forEach(part => {
-                        // 兼容多种字段名的防错提取
                         const partName = part['启蒙件名称'] || part['颗粒名称'] || part['零件名称'] || part['name'] || '未知颗粒';
                         const qty = part['用量'] || part['数量'] || part['qty'] || 1;
                         
-                        // 使用 Hash 函数为没有库位的数据分配稳定位置
-                        const mockLoc = getMockLocation(partName);
+                        // 直接从刚才加载好的全局字典中拿到“位置”字符串进行解析
+                        const dbLocStr = window.GlobalLocationCache[partName];
+                        const loc = parseDbLocation(dbLocStr, partName);
                         
                         newTasks.push({
                             id: Math.random().toString(36).substr(2),
-                            cabinetId: mockLoc.cabId,
-                            rawInput: '云端指派',
+                            cabinetId: loc.cabId,
+                            rawInput: dbLocStr || '云端未配置位置', // 在UI侧边栏展示真实的位置文本
                             quantity: qty,
                             originalQuantity: qty,
-                            row: mockLoc.row,
-                            col: mockLoc.col,
+                            row: loc.row,
+                            col: loc.col,
                             partName: partName,
                             isShortage: false
                         });
@@ -499,12 +526,7 @@
                         state.isPreloading = false;
                         state.preloadProgress = 0;
                         updateUI();
-                        
-                        // 后台静默发起批量 UUID 请求
-                        const uniqueParts = [...new Set(newTasks.map(t => t.partName))];
-                        batchFetchCloudModelIds(uniqueParts).then(() => {
-                            console.log(`[WMS Pro] 成功批量拉取了 ${uniqueParts.length} 种颗粒的 UUID 缓存 (云端工单)`);
-                        });
+                        // (因已在上方 Await 处理完毕，移除了旧版的静默后台拉取)
                     } else {
                         alert('⚠️ 解析成功，但云端数据列表中没有有效的颗粒数据！');
                         updateUI();
