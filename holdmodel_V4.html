@@ -16,9 +16,13 @@
     <!-- Lucide Icons -->
     <script src="https://unpkg.com/lucide@latest"></script>
 
-    <!-- 引入 Three.js 以支持 3D 物理模型渲染 -->
+    <!-- 引入 Three.js 及模型解析器依赖 -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+    <!-- FBXLoader 依赖 fflate 解析压缩数据 -->
+    <script src="https://cdn.jsdelivr.net/npm/fflate@0.8.2/umd/index.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/OBJLoader.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/FBXLoader.js"></script>
     
     <!-- 引入 SheetJS 解析 Excel 文件 -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
@@ -160,12 +164,15 @@
             { name: "608ZZ轴承", type: "轴承", img: PART_IMAGES["轴承"] }
         ];
 
+        // 统一的柜号格式化工具
+        const formatCabinetId = (id) => id.replace('S-', '小柜').replace('L-', '大柜');
+
         const generateCabinets = () => {
             const cabinets = [];
             let partIndex = 0;
             const getPart = () => PARTS_DB[(partIndex++) % PARTS_DB.length];
 
-            const createCab = (id, displayId, type, x, y) => {
+            const createCab = (id, numId, type, x, y) => {
                 const partsInCabinet = [];
                 for(let i=0; i<3; i++) {
                     partsInCabinet.push({
@@ -175,10 +182,11 @@
                         stock: Math.floor(Math.random() * 100) + 10
                     });
                 }
-                return { id, displayId, type, x, y, inventory: partsInCabinet, defaultPart: partsInCabinet[0].name };
+                // displayId 直接生成包含中文的完整名称
+                const fullDisplayId = (type === 'large' ? '大柜' : '小柜') + numId;
+                return { id, displayId: fullDisplayId, type, x, y, inventory: partsInCabinet, defaultPart: partsInCabinet[0].name };
             };
 
-            // 右侧小柜子
             const rightS = [
                 { id: 20, y: 1 }, { id: 19, y: 2 },
                 { id: 18, y: 4 }, { id: 17, y: 5 }, { id: 16, y: 6 }, { id: 15, y: 7 },
@@ -189,12 +197,10 @@
             ];
             rightS.forEach(c => cabinets.push(createCab(`S-${c.id}`, `${c.id}`, 'small', 4, c.y)));
 
-            // 左侧大柜子
             for (let i = 1; i <= 10; i++) {
                 cabinets.push(createCab(`L-${i}`, `${i}`, 'large', 0, 11 - i));
             }
 
-            // 左侧分散小柜子
             cabinets.push(createCab('S-21', '21', 'small', 0, 14));
             cabinets.push(createCab('S-22', '22', 'small', 0, 19));
             cabinets.push(createCab('S-23', '23', 'small', 0, 20));
@@ -207,14 +213,149 @@
         const CABINETS = generateCabinets();
         const ENTRANCE = { x: 2, y: 30 };
 
-        // ------------------ 3D 渲染器核心机制 ------------------
+        // 全局核心状态
+        const state = { 
+            pickingTasks: [], 
+            isGuiding: false, 
+            currentTaskIndex: 0, 
+            mainView: 'cabinet',
+            jobStartTime: null,
+            completedReport: null,
+            isPreloading: false,
+            preloadProgress: 0,
+            modelsPreloaded: false
+        };
+
+        // ------------------ 云端查询与模型加载预处理服务 ------------------
+        
+        window.GlobalModelCache = {}; 
+
+        const fetchCloudModelId = async (partName) => {
+            const API_ENDPOINT = 'https://stateless.unity.cn/release/2e87e2f7-8488-4b42-9a17-a4dce04e1ec3/CloudPath';
+            try {
+                const res = await fetch(API_ENDPOINT, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        action: 'commonSqlGet',
+                        tableName: 'IT_GBase',
+                        filter: { '颗粒名称': { op: '=', val: partName } },
+                        fields: ['UUID']
+                    })
+                });
+                const data = await res.json();
+                const records = data.data || data.result || [];
+                if (records.length > 0 && records[0].UUID) {
+                    return records[0].UUID;
+                }
+            } catch (e) {
+                console.error("API Fetch Error:", e);
+            }
+            return null;
+        };
+
+        const loadModelAsset = (url, type) => {
+            return new Promise((resolve, reject) => {
+                const loader = type === 'obj' ? new THREE.OBJLoader() : new THREE.FBXLoader();
+                loader.load(url, resolve, undefined, reject);
+            });
+        };
+
+        const processRawModel = (rawModel, partName) => {
+            const baseColors = [0x3b82f6, 0xf59e0b, 0x10b981, 0xef4444, 0x8b5cf6, 0x6366f1];
+            let hash = 0;
+            for (let j = 0; j < partName.length; j++) hash = partName.charCodeAt(j) + ((hash << 5) - hash);
+            const randomColor = baseColors[Math.abs(hash) % baseColors.length];
+            const customMat = new THREE.MeshStandardMaterial({ color: randomColor, metalness: 0.2, roughness: 0.4 });
+            
+            rawModel.traverse((child) => {
+                if (child.isMesh) {
+                    child.material = customMat;
+                }
+            });
+
+            const box = new THREE.Box3().setFromObject(rawModel);
+            const center = box.getCenter(new THREE.Vector3());
+            
+            const wrapper = new THREE.Group();
+            rawModel.position.sub(center); 
+            wrapper.add(rawModel);
+
+            const size = box.getSize(new THREE.Vector3());
+            const maxDim = Math.max(size.x, size.y, size.z);
+            if (maxDim > 0) {
+                const scale = 2 / maxDim;
+                wrapper.scale.set(scale, scale, scale);
+            }
+            return wrapper;
+        };
+
+        window.preloadAllModels = async () => {
+            if (state.pickingTasks.length === 0) return;
+
+            state.isPreloading = true;
+            state.preloadProgress = 0;
+            updateUI();
+
+            const uniqueParts = [...new Set(state.pickingTasks.map(t => t.partName))];
+            
+            for (let i = 0; i < uniqueParts.length; i++) {
+                const partName = uniqueParts[i];
+                
+                if (!window.GlobalModelCache[partName]) {
+                    const uuid = await fetchCloudModelId(partName);
+                    if (uuid) {
+                        const CDN_BASE = 'https://a.unity.cn/client_api/v1/buckets/181aa46a-4b2b-41d9-9765-38454415dee3/content/简模/';
+                        let loadedModel = null;
+                        try {
+                            loadedModel = await loadModelAsset(`${CDN_BASE}${uuid}.obj`, 'obj');
+                        } catch (e1) {
+                            try {
+                                loadedModel = await loadModelAsset(`${CDN_BASE}${uuid}.fbx`, 'fbx');
+                            } catch (e2) {
+                                console.warn(`预加载失败: OBJ/FBX 均未能抓取 - ${partName}`);
+                            }
+                        }
+                        
+                        if (loadedModel) {
+                            window.GlobalModelCache[partName] = processRawModel(loadedModel, partName);
+                        }
+                    }
+                }
+                
+                state.preloadProgress = Math.round(((i + 1) / uniqueParts.length) * 100);
+                updateUI(); 
+            }
+
+            state.isPreloading = false;
+            state.modelsPreloaded = true;
+            updateUI();
+        };
+
+        // ------------------ 3D 渲染器核心机制 (全量序列展示) ------------------
+        let currentRenderSession = 0;
         let current3DAnimId = null;
         let currentRenderer = null;
         let currentSceneControls = null;
 
-        const init3DViewer = (type) => {
+        const generateFallbackModel = (type, silverMat, darkMat, pcbMat) => {
+            const group = new THREE.Group();
+            const brickMat = new THREE.MeshStandardMaterial({ color: 0x94a3b8, metalness: 0.1, roughness: 0.2 });
+            const body = new THREE.Mesh(new THREE.BoxGeometry(2, 1.2, 1), brickMat);
+            group.add(body);
+            for(let i of [-0.5, 0.5]) {
+                const stud = new THREE.Mesh(new THREE.CylinderGeometry(0.3, 0.3, 0.4, 16), brickMat);
+                stud.position.set(i, 0.7, 0);
+                group.add(stud);
+            }
+            return group;
+        };
+
+        const init3DViewer = async (partName, type) => {
             const container = document.getElementById('part-3d-viewer');
             if(!container) return;
+
+            const session = ++currentRenderSession;
 
             if(current3DAnimId) cancelAnimationFrame(current3DAnimId);
             if(currentRenderer) {
@@ -222,12 +363,13 @@
                 container.innerHTML = '';
             }
 
+            container.innerHTML = `<div id="model-loader-ui" class="absolute inset-0 flex items-center justify-center bg-white/60 z-20 backdrop-blur-sm"><i data-lucide="loader-2" class="w-6 h-6 animate-spin text-brand-500"></i></div>`;
+            lucide.createIcons();
+
             const scene = new THREE.Scene();
-            
-            // 【移动端特殊适配】：调远摄像机距离 (Z轴由 2.2 退到 3.2)，缩小模型显示比例避免突兀
             const isMobile = window.innerWidth < 768;
             const camera = new THREE.PerspectiveCamera(isMobile ? 35 : 40, container.clientWidth / container.clientHeight, 0.1, 100);
-            camera.position.set(0, isMobile ? 1.5 : 2.0, isMobile ? 3.2 : 3.5); 
+            camera.position.set(0, isMobile ? 2.5 : 3.0, isMobile ? 4.5 : 5.0); 
 
             const renderer = new THREE.WebGLRenderer({ alpha: true, antialias: true });
             renderer.setSize(container.clientWidth, container.clientHeight);
@@ -238,9 +380,7 @@
             const controls = new THREE.OrbitControls(camera, renderer.domElement);
             controls.enableDamping = true;
             controls.enableZoom = true;
-            controls.autoRotate = true;
-            controls.autoRotateSpeed = 4.0;
-            currentSceneControls = controls;
+            controls.autoRotate = false; // 禁用全局自转，改用传送带移动
 
             const ambientLight = new THREE.AmbientLight(0xffffff, 0.8);
             scene.add(ambientLight);
@@ -255,85 +395,101 @@
             const darkMat = new THREE.MeshStandardMaterial({ color: 0x334155, metalness: 0.6, roughness: 0.4 });
             const pcbMat = new THREE.MeshStandardMaterial({ color: 0x10b981, metalness: 0.2, roughness: 0.8 });
 
-            const group = new THREE.Group();
+            // 动态拉取当前模型确保绝对展示
+            if (!window.GlobalModelCache[partName]) {
+                const uuid = await fetchCloudModelId(partName);
+                if (session !== currentRenderSession) return;
 
-            if (type === "螺丝") {
-                const head = new THREE.Mesh(new THREE.CylinderGeometry(0.8, 0.8, 0.4, 32), silverMat);
-                head.position.y = 1;
-                const shaft = new THREE.Mesh(new THREE.CylinderGeometry(0.35, 0.35, 2, 16), silverMat);
-                group.add(head);
-                group.add(shaft);
-                for(let y=-0.8; y<0.8; y+=0.15) {
-                    const thread = new THREE.Mesh(new THREE.TorusGeometry(0.35, 0.05, 8, 16), silverMat);
-                    thread.position.y = y;
-                    thread.rotation.x = Math.PI / 2;
-                    group.add(thread);
-                }
-            } else if (type === "电机") {
-                const body = new THREE.Mesh(new THREE.BoxGeometry(1.8, 2, 1.8), darkMat);
-                const base = new THREE.Mesh(new THREE.BoxGeometry(2, 0.2, 2), silverMat);
-                base.position.y = 1.1;
-                const shaft = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.2, 1, 16), silverMat);
-                shaft.position.y = 1.6;
-                group.add(body);
-                group.add(base);
-                group.add(shaft);
-            } else if (type === "主板") {
-                const pcb = new THREE.Mesh(new THREE.BoxGeometry(3, 0.1, 2), pcbMat);
-                const chip1 = new THREE.Mesh(new THREE.BoxGeometry(0.8, 0.15, 0.8), darkMat);
-                chip1.position.set(-0.5, 0.1, 0);
-                const chip2 = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.15, 0.4), darkMat);
-                chip2.position.set(0.5, 0.1, 0.5);
-                const port = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.4, 1), silverMat);
-                port.position.set(1.2, 0.2, 0);
-                group.add(pcb);
-                group.add(chip1);
-                group.add(chip2);
-                group.add(port);
-            } else if (type === "芯片") {
-                const body = new THREE.Mesh(new THREE.BoxGeometry(1.5, 0.2, 1), darkMat);
-                group.add(body);
-                for(let i=-0.6; i<=0.6; i+=0.3) {
-                    const leg1 = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.3, 0.08), silverMat);
-                    leg1.position.set(i, -0.15, 0.55);
-                    const leg2 = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.3, 0.08), silverMat);
-                    leg2.position.set(i, -0.15, -0.55);
-                    group.add(leg1);
-                    group.add(leg2);
-                }
-            } else if (type === "轴承") {
-                const outer = new THREE.Mesh(new THREE.TorusGeometry(1, 0.2, 16, 64), silverMat);
-                const inner = new THREE.Mesh(new THREE.TorusGeometry(0.6, 0.2, 16, 64), silverMat);
-                outer.rotation.x = Math.PI / 2;
-                inner.rotation.x = Math.PI / 2;
-                group.add(outer);
-                group.add(inner);
-                for(let i=0; i<8; i++) {
-                    const angle = (i / 8) * Math.PI * 2;
-                    const ball = new THREE.Mesh(new THREE.SphereGeometry(0.18, 16, 16), silverMat);
-                    ball.position.set(Math.cos(angle)*0.8, 0, Math.sin(angle)*0.8);
-                    group.add(ball);
-                }
-            } else { 
-                const colors = [0xf59e0b, 0x3b82f6, 0xef4444, 0x10b981];
-                const randomColor = colors[Math.floor(Math.random() * colors.length)];
-                const brickMat = new THREE.MeshStandardMaterial({ color: randomColor, metalness: 0.1, roughness: 0.2 });
-                
-                const body = new THREE.Mesh(new THREE.BoxGeometry(2, 1.2, 1), brickMat);
-                group.add(body);
-                for(let i of [-0.5, 0.5]) {
-                    const stud = new THREE.Mesh(new THREE.CylinderGeometry(0.3, 0.3, 0.4, 16), brickMat);
-                    stud.position.set(i, 0.7, 0);
-                    group.add(stud);
+                if (uuid) {
+                    const CDN_BASE = 'https://a.unity.cn/client_api/v1/buckets/181aa46a-4b2b-41d9-9765-38454415dee3/content/简模/';
+                    let rawModel = null;
+                    try { rawModel = await loadModelAsset(`${CDN_BASE}${uuid}.obj`, 'obj'); } 
+                    catch(e1) {
+                        try { rawModel = await loadModelAsset(`${CDN_BASE}${uuid}.fbx`, 'fbx'); } 
+                        catch(e2) {}
+                    }
+                    if (session !== currentRenderSession) return;
+                    if (rawModel) {
+                        window.GlobalModelCache[partName] = processRawModel(rawModel, partName);
+                    }
                 }
             }
 
-            new THREE.Box3().setFromObject(group).getCenter(group.position).multiplyScalar(-1);
-            scene.add(group);
+            // 构建传送带全局组
+            const carouselGroup = new THREE.Group();
+            const SPACING = 3.5; // 模型间距
+
+            state.pickingTasks.forEach((t, idx) => {
+                let modelWrapper = new THREE.Group();
+                let hasModel = false;
+                
+                if (window.GlobalModelCache && window.GlobalModelCache[t.partName]) {
+                    modelWrapper.add(window.GlobalModelCache[t.partName].clone());
+                    hasModel = true;
+                }
+
+                if (!hasModel) {
+                    const fallbackGroup = generateFallbackModel("积木", silverMat, darkMat, pcbMat);
+                    const box = new THREE.Box3().setFromObject(fallbackGroup);
+                    const center = box.getCenter(new THREE.Vector3());
+                    fallbackGroup.position.sub(center);
+                    modelWrapper.add(fallbackGroup);
+                }
+
+                const isCurrent = idx === state.currentTaskIndex;
+                const isPast = idx < state.currentTaskIndex;
+
+                if (!isCurrent) {
+                    // 对非当前任务施加褪色/半透明处理
+                    const dimMat = new THREE.MeshStandardMaterial({
+                        color: isPast ? 0x94a3b8 : 0xe2e8f0,
+                        metalness: 0.1,
+                        roughness: 0.8,
+                        transparent: true,
+                        opacity: isPast ? 0.3 : 0.6
+                    });
+                    modelWrapper.traverse((child) => {
+                        if (child.isMesh) child.material = dimMat;
+                    });
+                    modelWrapper.scale.setScalar(0.65); // 缩小比例
+                    modelWrapper.position.y = -0.5; // 稍微下沉
+                } else {
+                    modelWrapper.scale.setScalar(1.2); // 放大当前展示
+                    
+                    // 底部光环特效
+                    const ringGeometry = new THREE.RingGeometry( 1.1, 1.3, 32 );
+                    const ringMat = new THREE.MeshBasicMaterial({ color: 0x6366f1, side: THREE.DoubleSide, transparent: true, opacity: 0.7 });
+                    const ring = new THREE.Mesh(ringGeometry, ringMat);
+                    ring.rotation.x = Math.PI / 2;
+                    ring.position.y = -1.0;
+                    modelWrapper.add(ring);
+
+                    // 自身自转标识
+                    modelWrapper.userData.isCurrent = true;
+                }
+
+                modelWrapper.position.x = idx * SPACING;
+                carouselGroup.add(modelWrapper);
+            });
+
+            // 核心: 将传送带偏移，使当前模型位于 0,0,0
+            carouselGroup.position.x = -state.currentTaskIndex * SPACING;
+            scene.add(carouselGroup);
+
+            const loaderUI = document.getElementById('model-loader-ui');
+            if (loaderUI) loaderUI.remove();
 
             const animate = () => {
                 current3DAnimId = requestAnimationFrame(animate);
                 controls.update();
+                
+                // 让当前高亮的模型自身轻轻自转
+                carouselGroup.children.forEach(child => {
+                    if (child.userData.isCurrent) {
+                        child.rotation.y += 0.01;
+                    }
+                });
+
                 renderer.render(scene, camera);
             };
             animate();
@@ -379,15 +535,6 @@
         window.mapFocusCurrent = () => {
             mapState.needsFocus = true;
             renderMap();
-        };
-
-        const state = { 
-            pickingTasks: [], 
-            isGuiding: false, 
-            currentTaskIndex: 0, 
-            mainView: 'cabinet',
-            jobStartTime: null,
-            completedReport: null
         };
 
         const handleExcelUpload = (e) => {
@@ -445,7 +592,8 @@
                                 originalQuantity: qty,
                                 row: parseInt(match[2]),
                                 col: parseInt(match[3]),
-                                partName: partName
+                                partName: partName,
+                                isShortage: false
                             });
                         }
                     }
@@ -453,6 +601,9 @@
 
                 if (newTasks.length > 0) {
                     state.pickingTasks = newTasks;
+                    state.modelsPreloaded = false;
+                    state.isPreloading = false;
+                    state.preloadProgress = 0;
                     updateUI();
                 } else {
                     alert("⚠️ 未在文件中找到有效的位置数据，请检查文件格式是否匹配（D列小柜，F列大柜）！");
@@ -471,6 +622,13 @@
                 task.quantity = newQty;
                 updateUI();
             }
+        };
+
+        const toggleShortage = () => {
+            if (!state.isGuiding || state.pickingTasks.length === 0) return;
+            const task = state.pickingTasks[state.currentTaskIndex];
+            task.isShortage = !task.isShortage;
+            updateUI();
         };
 
         const toggleSidebar = () => {
@@ -507,6 +665,22 @@
             const taskListContainer = document.getElementById('task-list-container');
             const currentScrollTop = taskListContainer ? taskListContainer.scrollTop : 0;
 
+            let progressHtml = '';
+            if (state.isGuiding && state.pickingTasks.length > 0) {
+                const percent = Math.round(((state.currentTaskIndex + 1) / state.pickingTasks.length) * 100);
+                progressHtml = `
+                    <div class="mb-4 bg-white/50 p-3 rounded-xl border border-slate-100 shadow-sm shrink-0">
+                        <div class="flex justify-between items-center text-[10px] font-bold text-slate-400 mb-2 tracking-widest uppercase">
+                            <span>作业总进度</span>
+                            <span class="text-brand-600 font-mono">${state.currentTaskIndex + 1} / ${state.pickingTasks.length}</span>
+                        </div>
+                        <div class="w-full bg-slate-200 h-1.5 rounded-full overflow-hidden">
+                            <div class="bg-brand-500 h-full transition-all duration-500" style="width: ${percent}%"></div>
+                        </div>
+                    </div>
+                `;
+            }
+
             container.innerHTML = `
                 <div class="flex flex-col h-full min-h-0">
                     ${!state.isGuiding ? `
@@ -516,9 +690,13 @@
                             </button>
                         </div>
                     ` : ''}
+                    
+                    ${progressHtml}
+
                     <div id="task-list-container" class="flex-1 overflow-y-auto no-scrollbar relative min-h-0">
                         <div class="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-3 flex justify-between items-center sticky top-0 bg-white/90 backdrop-blur pb-2 z-10">
-                            <span>Task Queue</span><span class="bg-brand-100 text-brand-600 px-1.5 min-w-[18px] h-[18px] flex items-center justify-center rounded-full leading-none">${state.pickingTasks.length}</span>
+                            <span>Task Queue</span>
+                            <span class="bg-brand-100 text-brand-600 px-1.5 min-w-[18px] h-[18px] flex items-center justify-center rounded-full leading-none">${state.pickingTasks.length}</span>
                         </div>
                         <div class="space-y-2 pb-10">
                             ${state.pickingTasks.length === 0 ? `<div class="text-center text-slate-400 text-xs py-10"><i data-lucide="inbox" class="w-8 h-8 opacity-20 mx-auto mb-2"></i>暂无拣货任务</div>` : 
@@ -548,20 +726,12 @@
                                 <div ${isActive ? 'id="active-task-item"' : ''} class="group p-3 rounded-2xl border transition-all ${isActive ? 'bg-brand-500 text-white shadow-glow border-brand-500' : isDone ? 'bg-slate-50 opacity-50' : 'bg-white border-slate-200'}">
                                     <div class="flex items-center gap-3">
                                         <div class="w-6 h-6 rounded-full flex justify-center items-center text-[10px] font-bold shrink-0 ${isActive ? 'bg-white text-brand-600' : 'bg-slate-100 text-slate-500'}">${isDone ? '<i data-lucide="check" class="w-3 h-3"></i>' : idx + 1}</div>
-                                        <div class="flex-1 min-w-0"><div class="text-sm font-bold truncate">${task.partName}</div><div class="text-[10px] font-mono opacity-70">${task.rawInput}</div></div>
+                                        <div class="flex-1 min-w-0"><div class="text-sm font-bold truncate">${task.partName}${task.isShortage ? '<i data-lucide="alert-triangle" class="w-3.5 h-3.5 text-red-500 inline-block ml-1 align-text-bottom"></i>' : ''}</div><div class="text-[10px] font-mono opacity-70">${formatCabinetId(task.cabinetId)}</div></div>
                                         ${qtyDisplayHtml}
                                     </div>
                                 </div>`
                             }).join('')}
                         </div>
-                    </div>
-                    <div class="pt-4 border-t border-slate-200/50 shrink-0">
-                        ${!state.isGuiding && state.pickingTasks.length > 0 ? `
-                            <button onclick="startGuidance()" class="w-full py-3 rounded-xl font-bold flex justify-center items-center gap-2 bg-slate-900 text-white hover:bg-slate-800 shadow-lg"><i data-lucide="play" class="w-4 h-4"></i> 开始作业</button>
-                        ` : state.isGuiding ? `
-                            <div class="flex gap-2"><button onclick="stopGuidance()" class="p-3 bg-slate-50 border border-slate-200 text-slate-500 rounded-xl"><i data-lucide="square" class="w-4 h-4"></i></button>
-                            <button onclick="nextGuidanceStep()" class="flex-1 py-3 bg-brand-500 text-white rounded-xl font-bold flex justify-center items-center gap-2 shadow-glow hover:bg-brand-600 transition-colors">跳过/完成 <i data-lucide="arrow-right" class="w-4 h-4"></i></button></div>
-                        ` : ''}
                     </div>
                 </div>
             `;
@@ -647,13 +817,14 @@
 
             const cabinetsSvg = CABINETS.map(cab => {
                 const pos = toSvg(cab.x, cab.y);
-                const w = cab.type === 'large' ? 44 : 32;
-                const h = cab.type === 'large' ? 22 : 18;
+                // 适当放大柜子的物理宽高以容纳中文字符
+                const w = cab.type === 'large' ? 56 : 42;
+                const h = cab.type === 'large' ? 26 : 20;
                 const isTarget = activeTargets.find(t => t.id === cab.id);
                 
                 let textColor = cab.type === 'large' ? '#ef4444' : '#0f172a';
                 let rectAttrs = `fill="#ffffff" stroke="#94a3b8" stroke-width="1"`;
-                let textAttrs = `fill="${textColor}" font-weight="bold"`;
+                let textAttrs = `fill="${textColor}" font-weight="bold" font-size="${cab.type === 'large' ? '12' : '10'}"`;
                 let pulseEffect = "";
                 let interactiveGroupOpen = `<g class="transition-all duration-300">`;
                 let interactiveGroupClose = `</g>`;
@@ -661,7 +832,7 @@
                 if (isTarget) {
                     if (isTarget.pulseColor === 'brand') {
                         rectAttrs = `fill="#eef2ff" stroke="#6366f1" stroke-width="2"`;
-                        textAttrs = `fill="${textColor}" font-weight="900" font-size="11"`; 
+                        textAttrs = `fill="${textColor}" font-weight="900" font-size="${cab.type === 'large' ? '14' : '11'}"`; 
                         pulseEffect = `<rect x="${pos.cx - w/2}" y="${pos.cy - h/2}" width="${w}" height="${h}" rx="3" fill="none" stroke="#818cf8" stroke-width="2">
                             <animate attributeName="stroke-width" values="2; 8; 2" dur="1.5s" repeatCount="indefinite" />
                             <animate attributeName="stroke-opacity" values="1; 0; 0" dur="1.5s" repeatCount="indefinite" />
@@ -674,7 +845,7 @@
                     ${pulseEffect}
                     ${interactiveGroupOpen}
                         <rect x="${pos.cx - w/2}" y="${pos.cy - h/2}" width="${w}" height="${h}" rx="3" ${rectAttrs} style="transition: all 0.3s;" />
-                        <text x="${pos.cx}" y="${pos.cy}" font-size="9" text-anchor="middle" dominant-baseline="central" pointer-events="none" ${textAttrs}>${cab.displayId}</text>
+                        <text x="${pos.cx}" y="${pos.cy}" text-anchor="middle" dominant-baseline="central" pointer-events="none" ${textAttrs}>${cab.displayId}</text>
                     ${interactiveGroupClose}
                 `;
             }).join('');
@@ -804,6 +975,7 @@
                 const totalPlanned = report.tasks.reduce((sum, t) => sum + t.originalQuantity, 0);
                 const totalPicked = report.tasks.reduce((sum, t) => sum + t.quantity, 0);
                 const varianceCount = report.tasks.filter(t => t.quantity !== t.originalQuantity).length;
+                const shortageCount = report.tasks.filter(t => t.isShortage).length;
 
                 container.innerHTML = `
                     <div class="glass-panel rounded-[2rem] p-4 md:p-10 w-full h-full flex flex-col relative overflow-hidden bg-white/90">
@@ -825,7 +997,7 @@
                             </div>
                         </div>
 
-                        <div class="grid grid-cols-3 gap-2 md:gap-4 mb-4 md:mb-6 shrink-0 relative z-10">
+                        <div class="grid grid-cols-2 md:grid-cols-4 gap-2 md:gap-4 mb-4 md:mb-6 shrink-0 relative z-10">
                             <div class="bg-slate-50 border border-slate-100 rounded-2xl p-3 md:p-5">
                                 <div class="text-[9px] md:text-xs font-bold text-slate-400 uppercase tracking-widest mb-1 truncate">总计拣货</div>
                                 <div class="text-xl md:text-3xl font-black text-slate-800">${totalPicked} <span class="text-[10px] md:text-sm text-slate-400 font-normal">/ ${totalPlanned}</span></div>
@@ -837,6 +1009,10 @@
                             <div class="bg-${varianceCount > 0 ? 'amber' : 'emerald'}-50 border border-${varianceCount > 0 ? 'amber' : 'emerald'}-100 rounded-2xl p-3 md:p-5">
                                 <div class="text-[9px] md:text-xs font-bold text-${varianceCount > 0 ? 'amber' : 'emerald'}-500 uppercase tracking-widest mb-1 truncate">数量调整</div>
                                 <div class="text-xl md:text-3xl font-black text-${varianceCount > 0 ? 'amber' : 'emerald'}-600">${varianceCount} <span class="text-[10px] md:text-sm opacity-60 font-normal">项</span></div>
+                            </div>
+                            <div class="bg-${shortageCount > 0 ? 'red' : 'slate'}-50 border border-${shortageCount > 0 ? 'red' : 'slate'}-100 rounded-2xl p-3 md:p-5">
+                                <div class="text-[9px] md:text-xs font-bold text-${shortageCount > 0 ? 'red' : 'slate'}-400 uppercase tracking-widest mb-1 truncate">缺件登记</div>
+                                <div class="text-xl md:text-3xl font-black text-${shortageCount > 0 ? 'red' : 'slate'}-600">${shortageCount} <span class="text-[10px] md:text-sm opacity-60 font-normal">项</span></div>
                             </div>
                         </div>
 
@@ -853,11 +1029,12 @@
                                     let qtyHtml = `<span class="font-bold text-slate-700">${t.quantity}</span>`;
                                     if (diff > 0) qtyHtml = `<span class="font-black text-emerald-600 bg-emerald-100 px-1 md:px-2 py-0.5 rounded">${t.quantity} (+${diff})</span>`;
                                     if (diff < 0) qtyHtml = `<span class="font-black text-amber-600 bg-amber-100 px-1 md:px-2 py-0.5 rounded">${t.quantity} (${diff})</span>`;
+                                    let shortageBadge = t.isShortage ? `<span class="ml-1 md:ml-2 inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full bg-red-100 text-red-600 text-[8px] md:text-[10px] font-black align-middle"><i data-lucide="alert-triangle" class="w-2.5 h-2.5"></i>缺件</span>` : '';
 
                                     return `
                                     <div class="grid grid-cols-12 px-2 py-2 md:px-3 md:py-3 items-center border-b border-slate-50 last:border-0 hover:bg-slate-50 rounded-xl transition-colors">
-                                        <div class="col-span-3 font-mono text-[10px] md:text-sm font-bold text-slate-600">${t.cabinetId} <span class="text-[8px] md:text-xs text-slate-400 font-normal hidden sm:inline">(${t.row}-${t.col})</span></div>
-                                        <div class="col-span-5 text-[10px] md:text-sm font-bold text-slate-800 truncate pr-2">${t.partName}</div>
+                                        <div class="col-span-3 font-mono text-[10px] md:text-sm font-bold text-slate-600">${formatCabinetId(t.cabinetId)} <span class="text-[8px] md:text-xs text-slate-400 font-normal hidden sm:inline">(${t.row}-${t.col})</span></div>
+                                        <div class="col-span-5 text-[10px] md:text-sm font-bold text-slate-800 truncate pr-2">${t.partName}${shortageBadge}</div>
                                         <div class="col-span-2 text-center text-[10px] md:text-sm text-slate-400 font-mono">${t.originalQuantity}</div>
                                         <div class="col-span-2 text-right text-[10px] md:text-sm">${qtyHtml}</div>
                                     </div>
@@ -880,11 +1057,38 @@
                 const rows = isLarge ? 10 : 15, cols = isLarge ? 3 : 5;
 
                 if (state.mainView === 'cabinet') {
+                    // 获取当前柜子所有的待取任务
+                    const tasksInCabinet = state.pickingTasks.filter(t => t.cabinetId === task.cabinetId);
+
                     let gridHtml = '';
                     for(let r=1; r<=rows; r++) {
                         for(let c=1; c<=cols; c++) {
-                            const isTgt = (r === task.row && c === task.col);
-                            gridHtml += `<div class="rounded flex justify-center items-center font-mono transition-all duration-500 ${isTgt ? 'bg-orange-500 text-white shadow-glow-orange scale-[1.15] z-10 font-black text-xs md:text-xl' : 'bg-slate-200/50 border border-slate-300/50 text-slate-500 text-[10px] md:text-xs font-medium'}">${isTgt ? `${r}-${c}` : '<span class="opacity-40">·</span>'}</div>`;
+                            const isCurrentTarget = (r === task.row && c === task.col);
+                            const relatedTasks = tasksInCabinet.filter(t => t.row === r && t.col === c);
+                            const isOtherTarget = !isCurrentTarget && relatedTasks.length > 0;
+                            
+                            // 优化：基础空网格采用更通透、更干净的浅灰色质感
+                            let cellClass = 'bg-slate-50/80 border border-slate-200/60 text-slate-300 text-[10px] md:text-xs font-medium';
+                            let cellContent = '<span class="opacity-30">·</span>';
+
+                            if (isCurrentTarget) {
+                                // 优化：当前目标采用微渐变橙色、纯白内边框与发光光晕，立体感与聚焦感拉满
+                                cellClass = 'bg-gradient-to-b from-orange-400 to-orange-500 text-white shadow-lg shadow-orange-500/40 scale-[1.15] z-10 font-black text-xs md:text-xl border border-white/80 ring-4 ring-orange-500/20';
+                                cellContent = `${r}-${c}`;
+                            } else if (isOtherTarget) {
+                                // 检查该位置的目标是否已经拾取完毕
+                                const isAllDone = relatedTasks.every(t => state.pickingTasks.findIndex(pt => pt.id === t.id) < state.currentTaskIndex);
+                                if (isAllDone) {
+                                    // 优化：已完成的目标采用柔和的薄荷绿，并带有半透明呼吸感
+                                    cellClass = 'bg-emerald-50 border border-emerald-200 text-emerald-500 text-[10px] md:text-sm font-bold opacity-80';
+                                } else {
+                                    // 优化：列表中同柜的其他待取目标，采用清晰的品牌蓝加粗边框，类似待按压的按钮
+                                    cellClass = 'bg-brand-50 border-2 border-brand-400 text-brand-600 text-[10px] md:text-sm font-black shadow-sm scale-[1.05] z-0';
+                                }
+                                cellContent = `${r}-${c}`;
+                            }
+
+                            gridHtml += `<div class="rounded flex justify-center items-center font-mono transition-all duration-500 ${cellClass}">${cellContent}</div>`;
                         }
                     }
 
@@ -901,73 +1105,98 @@
                     }
 
                     const gridStyle = `display: grid; grid-template-rows: repeat(${rows}, minmax(0, 1fr)); grid-template-columns: repeat(${cols}, minmax(0, 1fr)); width: 100%; height: 100%; gap: 2px;`;
+                    const totalProgressPercent = Math.round(((state.currentTaskIndex + 1) / state.pickingTasks.length) * 100);
 
                     container.innerHTML = `
-                        <div class="flex flex-col md:flex-row gap-3 md:gap-4 w-full h-full overflow-hidden pb-1 md:pb-0">
+                        <div class="flex flex-col w-full h-full overflow-hidden pb-1 md:pb-0">
                             
-                            <!-- Top/Left: Cabinet Layout (Fully Expand) -->
-                            <div class="glass-panel rounded-[1.5rem] md:rounded-[2rem] p-3 md:p-6 flex flex-col relative flex-1 min-h-0">
-                                <div class="flex justify-between items-start mb-2 md:mb-4 shrink-0">
-                                    <div class="flex items-center gap-2 md:gap-3">
-                                        <h3 class="text-xl md:text-3xl font-black text-slate-900 tracking-tight">${task.cabinetId}</h3>
-                                        <div class="bg-slate-100 text-slate-500 text-[10px] md:text-xs px-2 py-1 rounded-md font-mono border border-slate-200/50">${rows}x${cols}</div>
-                                    </div>
-                                    <button onclick="switchMainView('map')" class="bg-brand-50 text-brand-600 px-3 py-1.5 md:px-4 md:py-2.5 rounded-xl font-bold text-[10px] md:text-xs flex items-center gap-1.5 hover:bg-brand-100 transition border border-brand-100 shadow-sm">
-                                        <i data-lucide="map" class="w-3 h-3 md:w-4 md:h-4"></i> 查看导航
-                                    </button>
+                            <!-- 全局拾件进度条 -->
+                            <div class="w-full shrink-0 mb-3 px-1 md:px-0">
+                                <div class="flex justify-between items-center text-[10px] md:text-xs font-bold text-slate-500 tracking-widest mb-1.5">
+                                    <span>整体拾件进度</span>
+                                    <span class="text-brand-600 font-mono">${state.currentTaskIndex + 1} / ${state.pickingTasks.length} (${totalProgressPercent}%)</span>
                                 </div>
-                                
-                                <div class="flex-1 bg-white/50 rounded-xl border border-slate-200/60 p-1 md:p-4 flex items-center justify-center overflow-hidden relative">
-                                    <div class="absolute inset-0 bg-[radial-gradient(#e2e8f0_1px,transparent_1px)] [background-size:16px_16px] pointer-events-none"></div>
-                                    <div class="z-10" style="${gridStyle}">
-                                        ${gridHtml}
-                                    </div>
+                                <div class="w-full bg-slate-200 h-1.5 md:h-2 rounded-full overflow-hidden">
+                                    <div class="bg-brand-500 h-full transition-all duration-500" style="width: ${totalProgressPercent}%"></div>
                                 </div>
                             </div>
 
-                            <!-- Bottom/Right: Info & Interactive Action -->
-                            <div class="flex flex-row md:flex-col gap-2 md:gap-4 shrink-0 h-[170px] md:h-full md:w-[320px] w-full">
-                                <!-- Part Info (3D Model) -->
-                                <div class="glass-panel rounded-[1.5rem] md:rounded-[2rem] flex flex-col items-center justify-center relative flex-1 min-w-0 bg-white/80 overflow-hidden">
-                                    <div id="part-3d-viewer" class="w-full h-full absolute inset-0 z-10 cursor-grab active:cursor-grabbing"></div>
-                                    <div class="absolute bottom-0 left-0 right-0 text-center z-20 pointer-events-none bg-gradient-to-t from-white/80 via-white/50 to-transparent pt-6 pb-2">
-                                        <h2 class="text-sm md:text-xl font-black text-slate-900 tracking-tight truncate px-2">${task.partName}</h2>
-                                        <div class="text-[8px] md:text-[10px] text-brand-600 font-bold uppercase tracking-wider">${partInfo.type}</div>
+                            <!-- 核心修改：将 flex-col 改为 flex-col-reverse，使移动端模型操作区在上方，柜子在下方 -->
+                            <div class="flex flex-col-reverse md:flex-row gap-3 md:gap-4 flex-1 min-h-0">
+                                
+                                <!-- Bottom(Mobile) / Left(Desktop): Cabinet Layout (Fully Expand) -->
+                                <div class="glass-panel rounded-[1.5rem] md:rounded-[2rem] p-3 md:p-6 flex flex-col relative flex-1 min-h-0">
+                                    <div class="flex justify-between items-start mb-2 md:mb-4 shrink-0">
+                                        <div class="flex items-center gap-2 md:gap-3">
+                                            <h3 class="text-3xl md:text-4xl font-black text-slate-900 tracking-tight">${formatCabinetId(task.cabinetId)}</h3>
+                                            <div class="bg-slate-100 text-slate-500 text-[10px] md:text-xs px-2 py-1 rounded-md font-mono border border-slate-200/50">${rows}x${cols}</div>
+                                        </div>
+                                        <button onclick="switchMainView('map')" class="bg-brand-50 text-brand-600 px-3 py-1.5 md:px-4 md:py-2.5 rounded-xl font-bold text-[10px] md:text-xs flex items-center gap-1.5 hover:bg-brand-100 transition border border-brand-100 shadow-sm">
+                                            <i data-lucide="map" class="w-3 h-3 md:w-4 md:h-4"></i> 查看导航
+                                        </button>
+                                    </div>
+                                    
+                                    <div class="flex-1 bg-white/50 rounded-xl border border-slate-200/60 p-1 md:p-4 flex items-center justify-center overflow-hidden relative">
+                                        <div class="absolute inset-0 bg-[radial-gradient(#e2e8f0_1px,transparent_1px)] [background-size:16px_16px] pointer-events-none"></div>
+                                        <div class="z-10" style="${gridStyle}">
+                                            ${gridHtml}
+                                        </div>
                                     </div>
                                 </div>
 
-                                <!-- Interactive Qty Display & Next Button -->
-                                <div class="glass-panel rounded-[1.5rem] md:rounded-[2rem] bg-slate-900 p-3 md:p-5 flex flex-col justify-between flex-1 min-w-0 relative">
-                                    <div class="absolute -inset-10 bg-brand-500 blur-3xl opacity-20 pointer-events-none"></div>
-                                    
-                                    <div class="text-center w-full flex-1 flex flex-col justify-center relative z-10">
-                                        <div class="flex items-center justify-between md:justify-center gap-1 md:gap-6 w-full">
-                                            <button onclick="adjustQuantity(-1)" class="w-10 h-10 md:w-12 md:h-12 rounded-full bg-white/10 hover:bg-white/20 text-white flex items-center justify-center transition-colors border border-white/10 shrink-0">
-                                                <i data-lucide="minus" class="w-5 h-5"></i>
-                                            </button>
-                                            
-                                            <div class="flex flex-col items-center justify-center min-w-[60px] md:min-w-[100px]">
-                                                <div class="text-4xl md:text-6xl font-black ${qtyColorClass} leading-none tracking-tighter transition-colors">
-                                                    ${task.quantity}
-                                                </div>
-                                                ${diffIndicatorHtml}
-                                            </div>
-
-                                            <button onclick="adjustQuantity(1)" class="w-10 h-10 md:w-12 md:h-12 rounded-full bg-white/10 hover:bg-white/20 text-white flex items-center justify-center transition-colors border border-white/10 shrink-0">
-                                                <i data-lucide="plus" class="w-5 h-5"></i>
-                                            </button>
+                                <!-- Top(Mobile) / Right(Desktop): Info & Interactive Action -->
+                                <div class="flex flex-row md:flex-col gap-2 md:gap-4 shrink-0 h-[170px] md:h-full md:w-[320px] w-full">
+                                    <!-- Part Info (3D Model) -->
+                                    <div class="glass-panel rounded-[1.5rem] md:rounded-[2rem] flex flex-col items-center justify-center relative flex-1 min-w-0 bg-white/80 overflow-hidden">
+                                        <div id="part-3d-viewer" class="w-full h-full absolute inset-0 z-10 cursor-grab active:cursor-grabbing"></div>
+                                        <div class="absolute bottom-0 left-0 right-0 text-center z-20 pointer-events-none bg-gradient-to-t from-white/80 via-white/50 to-transparent pt-6 pb-2">
+                                            <h2 class="text-sm md:text-xl font-black text-slate-900 tracking-tight truncate px-2">${task.partName}</h2>
+                                            <div class="text-[8px] md:text-[10px] text-brand-600 font-bold uppercase tracking-wider">${partInfo.type}</div>
                                         </div>
                                     </div>
 
-                                    <div class="flex gap-2 md:gap-3 w-full shrink-0 z-10 mt-2 md:mt-0">
-                                        ${state.currentTaskIndex > 0 ? `
-                                        <button onclick="prevGuidanceStep()" class="w-10 h-10 md:w-12 md:h-12 bg-slate-700 text-white rounded-xl flex justify-center items-center hover:bg-slate-600 transition-colors shrink-0 shadow-lg" title="上一步">
-                                            <i data-lucide="arrow-left" class="w-4 h-4 md:w-5 md:h-5"></i>
+                                    <!-- Interactive Qty Display & Next Button -->
+                                    <div class="glass-panel rounded-[1.5rem] md:rounded-[2rem] bg-slate-900 p-3 md:p-5 flex flex-col justify-between flex-1 min-w-0 relative">
+                                        <div class="absolute -inset-10 bg-brand-500 blur-3xl opacity-20 pointer-events-none"></div>
+                                        
+                                        <div class="absolute top-2.5 left-3 md:top-4 md:left-4 z-20 text-[10px] md:text-xs font-bold text-slate-400 tracking-widest pointer-events-none">
+                                            拾件数量
+                                        </div>
+
+                                        <button onclick="toggleShortage()" class="absolute top-1.5 right-1.5 md:top-3 md:right-3 z-20 ${task.isShortage ? 'bg-red-500 text-white shadow-lg shadow-red-500/30 animate-pulse border-transparent' : 'bg-slate-800/80 backdrop-blur border-slate-700 text-red-400 hover:bg-slate-700'} border text-[9px] md:text-[11px] font-bold px-2 py-1 md:px-2.5 md:py-1.5 rounded-lg flex items-center gap-1 transition-all" title="${task.isShortage ? '取消缺件标记' : '标记缺件'}">
+                                            <i data-lucide="alert-triangle" class="w-3 h-3 md:w-4 md:h-4"></i>
+                                            ${task.isShortage ? '已登记缺件' : '标记缺件'}
                                         </button>
-                                        ` : ''}
-                                        <button onclick="nextGuidanceStep()" class="flex-1 h-10 md:h-12 bg-brand-500 text-white rounded-xl font-bold flex justify-center items-center gap-1.5 shadow-glow hover:bg-brand-600 transition-colors text-sm">
-                                            下一步 <i data-lucide="arrow-right" class="w-4 h-4 md:w-5 md:h-5"></i>
-                                        </button>
+
+                                        <div class="text-center w-full flex-1 flex flex-col justify-center relative z-10 mt-3 md:mt-0">
+                                            <div class="flex items-center justify-between md:justify-center gap-1 md:gap-6 w-full">
+                                                <button onclick="adjustQuantity(-1)" class="w-10 h-10 md:w-12 md:h-12 rounded-full bg-white/10 hover:bg-white/20 text-white flex items-center justify-center transition-colors border border-white/10 shrink-0">
+                                                    <i data-lucide="minus" class="w-5 h-5"></i>
+                                                </button>
+                                                
+                                                <div class="flex flex-col items-center justify-center min-w-[60px] md:min-w-[100px]">
+                                                    <div class="text-4xl md:text-6xl font-black ${qtyColorClass} leading-none tracking-tighter transition-colors">
+                                                        ${task.quantity}
+                                                    </div>
+                                                    ${diffIndicatorHtml}
+                                                </div>
+
+                                                <button onclick="adjustQuantity(1)" class="w-10 h-10 md:w-12 md:h-12 rounded-full bg-white/10 hover:bg-white/20 text-white flex items-center justify-center transition-colors border border-white/10 shrink-0">
+                                                    <i data-lucide="plus" class="w-5 h-5"></i>
+                                                </button>
+                                            </div>
+                                        </div>
+
+                                        <div class="flex gap-2 md:gap-3 w-full shrink-0 z-10 mt-2 md:mt-0">
+                                            ${state.currentTaskIndex > 0 ? `
+                                            <button onclick="prevGuidanceStep()" class="w-10 h-10 md:w-12 md:h-12 bg-slate-700 text-white rounded-xl flex justify-center items-center hover:bg-slate-600 transition-colors shrink-0 shadow-lg" title="上一步">
+                                                <i data-lucide="arrow-left" class="w-4 h-4 md:w-5 md:h-5"></i>
+                                            </button>
+                                            ` : ''}
+                                            <button onclick="nextGuidanceStep()" class="flex-1 h-10 md:h-12 bg-brand-500 text-white rounded-xl font-bold flex justify-center items-center gap-1.5 shadow-glow hover:bg-brand-600 transition-colors text-sm">
+                                                下一步 <i data-lucide="arrow-right" class="w-4 h-4 md:w-5 md:h-5"></i>
+                                            </button>
+                                        </div>
                                     </div>
                                 </div>
                             </div>
@@ -975,7 +1204,7 @@
                     `;
 
                     setTimeout(() => {
-                        init3DViewer(partInfo.type);
+                        init3DViewer(task.partName, partInfo.type);
                     }, 50);
 
                 } 
@@ -1022,17 +1251,52 @@
                         </div>
                     `;
                 } else {
+                    let actionAreaHtml = '';
+                    
+                    if (state.isPreloading) {
+                        actionAreaHtml = `
+                            <div class="w-full max-w-xs mt-2">
+                                <div class="flex justify-between items-center mb-2">
+                                    <span class="text-[10px] font-bold text-slate-400 uppercase tracking-widest">预加载进度</span>
+                                    <span class="text-sm font-black text-brand-600">${state.preloadProgress}%</span>
+                                </div>
+                                <div class="w-full h-2.5 bg-slate-100 rounded-full overflow-hidden shadow-inner">
+                                    <div class="h-full bg-brand-500 rounded-full transition-all duration-300" style="width: ${state.preloadProgress}%"></div>
+                                </div>
+                                <p class="text-[10px] text-slate-400 mt-3 text-center animate-pulse">正在从云端并行拉取 3D 资源，请稍候...</p>
+                            </div>
+                        `;
+                    } else if (state.modelsPreloaded) {
+                        actionAreaHtml = `
+                            <div class="flex flex-col items-center gap-3 w-full max-w-xs mt-2">
+                                <div class="text-xs font-bold text-emerald-500 bg-emerald-50 px-4 py-1.5 rounded-full flex items-center gap-1.5 mb-2 border border-emerald-100 shadow-sm"><i data-lucide="check-circle-2" class="w-3.5 h-3.5"></i> 模型资源已全部就绪</div>
+                                <button onclick="startGuidance()" class="w-full bg-brand-500 text-white px-10 py-3.5 rounded-2xl font-black text-lg shadow-glow hover:bg-brand-600 transition-transform hover:scale-105 flex justify-center items-center gap-2">
+                                    <i data-lucide="play" class="w-5 h-5"></i> 开始作业
+                                </button>
+                            </div>
+                        `;
+                    } else {
+                        actionAreaHtml = `
+                            <div class="flex flex-col gap-3 mt-2 w-full max-w-xs">
+                                <button onclick="preloadAllModels()" class="w-full bg-white border border-brand-200 text-brand-600 px-6 py-3.5 rounded-2xl font-bold text-sm shadow-sm hover:bg-brand-50 transition-transform hover:scale-105 flex justify-center items-center gap-2">
+                                    <i data-lucide="cloud-download" class="w-4 h-4"></i> 预加载 3D 模型 (推荐)
+                                </button>
+                                <button onclick="startGuidance()" class="w-full bg-slate-900 text-white px-8 py-3.5 rounded-2xl font-bold text-sm shadow-lg hover:bg-slate-800 transition-transform hover:scale-105 flex justify-center items-center gap-2">
+                                    <i data-lucide="zap" class="w-4 h-4 text-amber-400"></i> 跳过预载，直接开始
+                                </button>
+                            </div>
+                        `;
+                    }
+
                     container.innerHTML = `
                         <div class="flex flex-col md:flex-row gap-4 w-full h-full">
-                            <div class="glass-panel rounded-[2rem] border-2 border-brand-100 flex flex-col items-center justify-center text-slate-600 flex-1 min-h-[300px] bg-brand-50/40">
-                                <div class="w-20 h-20 bg-white rounded-full flex items-center justify-center mb-6 shadow-sm border border-brand-100 text-brand-500">
-                                    <i data-lucide="list-checks" class="w-10 h-10"></i>
+                            <div class="glass-panel rounded-[2rem] border-2 border-brand-100 flex flex-col items-center justify-center text-slate-600 flex-1 min-h-[300px] bg-brand-50/40 px-4 py-8">
+                                <div class="w-16 h-16 bg-white rounded-full flex items-center justify-center mb-4 shadow-sm border border-brand-100 text-brand-500">
+                                    <i data-lucide="list-checks" class="w-8 h-8"></i>
                                 </div>
-                                <h3 class="text-2xl font-black text-slate-800 mb-2 tracking-tight">已成功读取 ${state.pickingTasks.length} 项任务</h3>
-                                <p class="text-sm font-medium text-slate-500 mb-8">路径及目标已就位，请点击下方按钮开始</p>
-                                <button onclick="startGuidance()" class="bg-brand-500 text-white px-10 py-4 rounded-2xl font-black text-lg shadow-glow hover:bg-brand-600 transition-transform hover:scale-105 flex items-center gap-3">
-                                    <i data-lucide="play" class="w-6 h-6"></i> 开始作业
-                                </button>
+                                <h3 class="text-xl md:text-2xl font-black text-slate-800 mb-2 tracking-tight text-center">已成功读取 ${state.pickingTasks.length} 项任务</h3>
+                                <p class="text-xs font-medium text-slate-500 mb-6 text-center max-w-sm">您可以选择一键预加载所有云端模型资源，确保作业过程中完全零卡顿。</p>
+                                ${actionAreaHtml}
                             </div>
                             <div class="flex-1 w-full min-h-[300px] glass-panel rounded-[2rem] overflow-hidden flex items-center justify-center opacity-90 relative" id="map-container">
                                 <!-- SVG dynamically injected here -->
@@ -1132,6 +1396,48 @@
             state.mainView = 'cabinet';
             updateUI();
         };
+
+        // ------------------ 移动端全局手势滑动控制 ------------------
+        let touchStartY = 0;
+        let touchStartX = 0;
+        let swipeTarget = null;
+
+        document.addEventListener('touchstart', (e) => {
+            if (e.changedTouches.length > 0) {
+                touchStartY = e.changedTouches[0].screenY;
+                touchStartX = e.changedTouches[0].screenX;
+                swipeTarget = e.target;
+            }
+        }, { passive: true });
+
+        document.addEventListener('touchend', (e) => {
+            // 仅在指导作业中，且停留在柜子主视图时才允许滑动切换
+            if (!state.isGuiding || state.mainView !== 'cabinet') return;
+
+            // 智能避让：如果在 3D 预览图（需旋转模型）或 任务列表（需上下滚动）滑动，则不触发步骤切换
+            if (swipeTarget && (swipeTarget.closest('#part-3d-viewer') || swipeTarget.closest('#task-list-container'))) {
+                return;
+            }
+
+            if (e.changedTouches.length > 0) {
+                let touchEndY = e.changedTouches[0].screenY;
+                let touchEndX = e.changedTouches[0].screenX;
+
+                let deltaY = touchStartY - touchEndY;
+                let deltaX = Math.abs(touchStartX - touchEndX);
+
+                // 判定为有效的垂直滑动（垂直距离大于 50 像素，且垂直位移大于水平位移防误触）
+                if (Math.abs(deltaY) > 50 && Math.abs(deltaY) > deltaX) {
+                    if (deltaY > 0) {
+                        // 向上滑动 -> 执行下一步
+                        nextGuidanceStep();
+                    } else {
+                        // 向下滑动 -> 执行上一步
+                        prevGuidanceStep();
+                    }
+                }
+            }
+        }, { passive: true });
 
         document.addEventListener('DOMContentLoaded', () => {
             updateUI();
