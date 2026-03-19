@@ -435,8 +435,8 @@
 
         const fetchRecordFromURL = async () => {
             const urlParams = new URLSearchParams(window.location.search);
-            const recordID = urlParams.get('RecordID');
-            if (!recordID) return;
+            const queryID = urlParams.get('ID');
+            if (!queryID) return;
 
             const container = document.getElementById('dashboard-container');
             if(container) {
@@ -444,7 +444,7 @@
                     <div class="flex flex-col items-center justify-center w-full h-full glass-panel rounded-[2rem] animate-pulse">
                         <i data-lucide="cloud-download" class="w-12 h-12 text-brand-500 mb-4 opacity-80"></i>
                         <h3 class="text-xl font-black text-slate-800 tracking-tight mb-1">正在同步云端工单数据...</h3>
-                        <p class="text-xs font-mono text-slate-400">RecordID: ${recordID}</p>
+                        <p class="text-xs font-mono text-slate-400">ID: ${queryID}</p>
                         <p class="text-[10px] text-slate-400 mt-6" id="loading-status-text">正在提取清单结构...</p>
                     </div>
                 `;
@@ -463,9 +463,9 @@
                             conjunction: "and",
                             conditions: [
                                 {
-                                    field_name: "record_id",
+                                    field_name: "ID",
                                     operator: "is",
-                                    value: [recordID]
+                                    value: [queryID]
                                 }
                             ]
                         }
@@ -1690,7 +1690,7 @@
 
         document.addEventListener('DOMContentLoaded', () => {
             const urlParams = new URLSearchParams(window.location.search);
-            if (urlParams.has('RecordID')) {
+            if (urlParams.has('ID')) {
                 fetchRecordFromURL();
             } else {
                 updateUI();
