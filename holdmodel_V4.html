@@ -140,7 +140,8 @@
     <div id="sidebar-overlay" class="fixed inset-0 bg-slate-900/20 backdrop-blur-sm z-40 hidden opacity-0 transition-opacity duration-300 md:hidden" onclick="toggleSidebar()"></div>
 
     <!-- SIDEBAR -->
-    <aside id="sidebar" class="fixed md:relative inset-y-0 left-0 transform -translate-x-full md:translate-x-0 transition-transform duration-500 ease-spring z-50 w-80 h-full md:h-[calc(100dvh-4rem)] glass-panel border-r border-white/50 flex flex-col shrink-0 md:rounded-[2rem] md:my-8 md:ml-6 shadow-2xl md:shadow-glass">
+    <!-- 优化：将 w-80 改为 w-full md:w-80 使得在移动端能充满全屏 -->
+    <aside id="sidebar" class="fixed md:relative inset-y-0 left-0 transform -translate-x-full md:translate-x-0 transition-transform duration-500 ease-spring z-50 w-full md:w-80 h-full md:h-[calc(100dvh-4rem)] glass-panel border-r border-white/50 flex flex-col shrink-0 md:rounded-[2rem] md:my-8 md:ml-6 shadow-2xl md:shadow-glass">
         <div class="hidden md:flex p-6 pb-4 items-center gap-3">
             <div class="w-10 h-10 rounded-xl bg-slate-900 flex items-center justify-center text-white shadow-lg shadow-slate-900/20">
                 <i data-lucide="layers" class="w-5 h-5"></i>
@@ -152,7 +153,7 @@
         </div>
 
         <div class="md:hidden flex justify-between items-center p-5 border-b border-slate-200/50">
-            <div class="font-bold text-slate-800 text-sm tracking-widest uppercase">Menu</div>
+            <div class="font-bold text-slate-800 text-sm tracking-widest uppercase">清单队列</div>
             <button onclick="toggleSidebar()" class="text-slate-400 hover:text-slate-800 bg-slate-100 p-2 rounded-full"><i data-lucide="x" class="w-4 h-4"></i></button>
         </div>
 
@@ -929,29 +930,38 @@
                                 const isActive = state.isGuiding && idx === state.currentTaskIndex;
                                 const isDone = state.isGuiding && idx < state.currentTaskIndex;
                                 
-                                let qtyDisplayHtml = `<div class="font-mono text-sm font-bold">x${task.quantity}</div>`;
+                                // 优化：在移动端增大数量标识字体
+                                let qtyDisplayHtml = `<div class="font-mono text-xl md:text-sm font-black">x${task.quantity}</div>`;
                                 const diff = task.quantity - task.originalQuantity;
                                 if (diff > 0) {
                                     qtyDisplayHtml = `
                                         <div class="flex flex-col items-end">
-                                            <div class="font-mono text-sm font-black text-emerald-600 bg-emerald-100/50 px-1.5 rounded">x${task.quantity}</div>
-                                            <div class="text-[9px] text-emerald-500 font-bold mt-0.5 flex items-center gap-0.5"><i data-lucide="arrow-up" class="w-2.5 h-2.5"></i> 多拿${diff}</div>
+                                            <div class="font-mono text-xl md:text-sm font-black text-emerald-600 bg-emerald-100/50 px-1.5 rounded">x${task.quantity}</div>
+                                            <div class="text-[10px] md:text-[9px] text-emerald-500 font-bold mt-0.5 flex items-center gap-0.5"><i data-lucide="arrow-up" class="w-3 h-3 md:w-2.5 md:h-2.5"></i> 多拿${diff}</div>
                                         </div>
                                     `;
                                 } else if (diff < 0) {
                                     qtyDisplayHtml = `
                                         <div class="flex flex-col items-end">
-                                            <div class="font-mono text-sm font-black text-amber-600 bg-amber-100/50 px-1.5 rounded">x${task.quantity}</div>
-                                            <div class="text-[9px] text-amber-500 font-bold mt-0.5 flex items-center gap-0.5"><i data-lucide="arrow-down" class="w-2.5 h-2.5"></i> 少拿${Math.abs(diff)}</div>
+                                            <div class="font-mono text-xl md:text-sm font-black text-amber-600 bg-amber-100/50 px-1.5 rounded">x${task.quantity}</div>
+                                            <div class="text-[10px] md:text-[9px] text-amber-500 font-bold mt-0.5 flex items-center gap-0.5"><i data-lucide="arrow-down" class="w-3 h-3 md:w-2.5 md:h-2.5"></i> 少拿${Math.abs(diff)}</div>
                                         </div>
                                     `;
                                 }
 
                                 return `
-                                <div ${isActive ? 'id="active-task-item"' : ''} class="group p-3 rounded-2xl border transition-all ${isActive ? 'bg-brand-500 text-white shadow-glow border-brand-500' : isDone ? 'bg-slate-50 opacity-50' : 'bg-white border-slate-200'}">
+                                <div ${isActive ? 'id="active-task-item"' : ''} class="group p-3 md:p-3.5 rounded-2xl border transition-all ${isActive ? 'bg-brand-500 text-white shadow-glow border-brand-500' : isDone ? 'bg-slate-50 opacity-50' : 'bg-white border-slate-200'}">
                                     <div class="flex items-center gap-3">
-                                        <div class="w-6 h-6 rounded-full flex justify-center items-center text-[10px] font-bold shrink-0 ${isActive ? 'bg-white text-brand-600' : 'bg-slate-100 text-slate-500'}">${isDone ? '<i data-lucide="check" class="w-3 h-3"></i>' : idx + 1}</div>
-                                        <div class="flex-1 min-w-0"><div class="text-sm font-bold truncate">${task.partName}${task.isShortage ? '<i data-lucide="alert-triangle" class="w-3.5 h-3.5 text-red-500 inline-block ml-1 align-text-bottom"></i>' : ''}</div><div class="text-[10px] font-mono opacity-70">${task.cabinetId === '未分配' ? '<span class="text-amber-500 font-bold">暂无库位信息</span>' : formatCabinetIdDisplay(task.cabinetId)}</div></div>
+                                        <div class="w-8 h-8 md:w-6 md:h-6 rounded-full flex justify-center items-center text-xs md:text-[10px] font-bold shrink-0 ${isActive ? 'bg-white text-brand-600' : 'bg-slate-100 text-slate-500'}">${isDone ? '<i data-lucide="check" class="w-4 h-4 md:w-3 md:h-3"></i>' : idx + 1}</div>
+                                        
+                                        <!-- 优化：将排版改为两行，缩小颗粒名，极度放大柜体与行列坐标信息 -->
+                                        <div class="flex-1 min-w-0 flex flex-col justify-center">
+                                            <div class="text-[11px] md:text-xs font-medium opacity-80 truncate mb-1 md:mb-0.5">${task.partName}${task.isShortage ? '<i data-lucide="alert-triangle" class="w-3.5 h-3.5 text-red-500 inline-block ml-1 align-text-bottom"></i>' : ''}</div>
+                                            <div class="text-xl md:text-base font-black tracking-tight leading-none flex items-baseline">
+                                                ${task.cabinetId === '未分配' ? '<span class="text-amber-500 text-sm">暂无库位信息</span>' : `${formatCabinetIdDisplay(task.cabinetId)} <span class="font-bold opacity-60 text-base md:text-xs ml-1.5 md:ml-1">${task.row}-${task.col}</span>`}
+                                            </div>
+                                        </div>
+                                        
                                         ${qtyDisplayHtml}
                                     </div>
                                 </div>`
@@ -1313,9 +1323,11 @@
                                 } else if (isOtherTarget) {
                                     const isAllDone = relatedTasks.every(t => state.pickingTasks.findIndex(pt => pt.id === t.id) < state.currentTaskIndex);
                                     if (isAllDone) {
-                                        cellClass = 'bg-emerald-50 border border-emerald-200 text-emerald-500 text-[10px] md:text-sm font-bold opacity-80';
+                                        // 移除了过大的字体，使其与默认网格尺寸保持一致
+                                        cellClass = 'bg-emerald-50 border border-emerald-200 text-emerald-500 text-[10px] md:text-xs font-bold opacity-80';
                                     } else {
-                                        cellClass = 'bg-brand-50 border-2 border-brand-400 text-brand-600 text-[10px] md:text-sm font-black shadow-sm scale-[1.05] z-0';
+                                        // 移除了 scale-[1.05] 缩放效果和过大的字体，使其与默认网格尺寸保持一致
+                                        cellClass = 'bg-brand-50 border-2 border-brand-400 text-brand-600 text-[10px] md:text-xs font-bold shadow-sm z-0';
                                     }
                                     cellContent = `${r}-${c}`;
                                 }
