@@ -886,6 +886,28 @@
             return formatCabinetId(id);
         };
 
+        // 【新增】：快速跳转到指定任务的函数
+        const jumpToTask = (index) => {
+            if (!state.isGuiding) return;
+            if (index >= 0 && index < state.pickingTasks.length) {
+                state.currentTaskIndex = index;
+                if (state.mainView === 'map') {
+                    mapState.needsFocus = true;
+                }
+                
+                // 如果是移动端，点击跳转后自动收起侧边栏以展示主界面
+                if (window.innerWidth < 768) {
+                    const sidebar = document.getElementById('sidebar');
+                    if (!sidebar.classList.contains('-translate-x-full')) {
+                        toggleSidebar();
+                    }
+                }
+                
+                updateUI();
+                setTimeout(scrollToActiveTask, 50);
+            }
+        };
+
         const renderSidebar = () => {
             const container = document.getElementById('sidebar-content');
             const taskListContainer = document.getElementById('task-list-container');
@@ -930,7 +952,6 @@
                                 const isActive = state.isGuiding && idx === state.currentTaskIndex;
                                 const isDone = state.isGuiding && idx < state.currentTaskIndex;
                                 
-                                // 彻底居中并赋予圆角背景的拾件数量 UI
                                 let qtyDisplayHtml = `<div class="font-mono text-lg md:text-base font-black flex items-center justify-center px-3 py-1.5 rounded-xl bg-slate-200/60 text-slate-700 min-w-[48px]">x${task.quantity}</div>`;
                                 const diff = task.quantity - task.originalQuantity;
                                 if (diff > 0) {
@@ -949,8 +970,9 @@
                                     `;
                                 }
 
+                                // 【修改】：在 div 上增加了 onclick="jumpToTask(${idx})" 和 cursor-pointer 以及 hover 效果强化
                                 return `
-                                <div ${isActive ? 'id="active-task-item"' : ''} class="group p-3 md:p-3.5 rounded-2xl border transition-all duration-300 ${isActive ? 'bg-brand-500 text-white shadow-lg shadow-brand-500/30 border-brand-500 scale-[1.02] transform' : isDone ? 'bg-slate-100/50 opacity-60 border-transparent' : 'bg-white border-slate-200 hover:border-brand-200 hover:shadow-sm'}">
+                                <div ${isActive ? 'id="active-task-item"' : ''} onclick="jumpToTask(${idx})" class="cursor-pointer group p-3 md:p-3.5 rounded-2xl border transition-all duration-300 ${isActive ? 'bg-brand-500 text-white shadow-lg shadow-brand-500/30 border-brand-500 scale-[1.02] transform' : isDone ? 'bg-slate-100/50 opacity-60 border-transparent hover:opacity-100' : 'bg-white border-slate-200 hover:border-brand-200 hover:shadow-sm'}">
                                     <div class="flex items-center gap-3">
                                         <div class="w-8 h-8 md:w-7 md:h-7 rounded-xl flex justify-center items-center text-xs font-black shrink-0 ${isActive ? 'bg-white/20 text-white shadow-sm' : isDone ? 'bg-emerald-100 text-emerald-600' : 'bg-slate-100 text-slate-500'}">${isDone ? '<i data-lucide="check" class="w-4 h-4 md:w-3.5 md:h-3.5"></i>' : idx + 1}</div>
                                         
@@ -1680,9 +1702,11 @@
 
                 if (Math.abs(deltaY) > 50 && Math.abs(deltaY) > deltaX) {
                     if (deltaY < 0) {
-                        nextGuidanceStep();
-                    } else {
+                        // 向下滑动 -> 执行上一步
                         prevGuidanceStep();
+                    } else {
+                        // 向上滑动 -> 执行下一步
+                        nextGuidanceStep();
                     }
                 }
             }
