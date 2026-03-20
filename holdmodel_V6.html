@@ -1671,77 +1671,106 @@
             if (!state.completedReport) return;
 
             const urlParams = new URLSearchParams(window.location.search);
-            const queryID = urlParams.get('ID');
-            // 判断是否存在人为修改数量
+            const queryID = urlParams.get('ID') || '无';
             const hasVariance = state.completedReport.tasks.some(t => t.quantity !== t.originalQuantity);
 
-            if (queryID && hasVariance) {
-                // 构建需要回传的 glistb
-                const glistb = state.completedReport.tasks.map(t => {
-                    if (t.rawPartObj) {
-                        // 浅拷贝原始对象并修改其数量字段
-                        const updatedObj = { ...t.rawPartObj };
-                        if ('用量' in updatedObj) updatedObj['用量'] = t.quantity;
-                        else if ('数量' in updatedObj) updatedObj['数量'] = t.quantity;
-                        else if ('qty' in updatedObj) updatedObj['qty'] = t.quantity;
-                        else updatedObj['用量'] = t.quantity; 
-                        return updatedObj;
-                    }
-                    return { "启蒙件名称": t.partName, "用量": t.quantity };
-                });
+            const btn = document.getElementById('archive-btn');
+            if (btn) {
+                btn.innerHTML = `<i data-lucide="loader-2" class="w-3 h-3 md:w-4 md:h-4 animate-spin"></i> 正在归档并同步云端...`;
+                btn.disabled = true;
+                lucide.createIcons();
+            }
 
-                const btn = document.getElementById('archive-btn');
-                if (btn) {
-                    btn.innerHTML = `<i data-lucide="loader-2" class="w-3 h-3 md:w-4 md:h-4 animate-spin"></i> 正在更新云端...`;
-                    btn.disabled = true;
-                    lucide.createIcons();
-                }
+            try {
+                const API_ENDPOINT = 'https://stateless.unity.cn/release/2e87e2f7-8488-4b42-9a17-a4dce04e1ec3/CloudPath';
+                const payloads = [];
 
-                try {
-                    const API_ENDPOINT = 'https://stateless.unity.cn/release/2e87e2f7-8488-4b42-9a17-a4dce04e1ec3/CloudPath';
-                    const response = await fetch(API_ENDPOINT, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({
-                            action: 'updateRecord',
-                            BitableUUID: 'BitableUUID084',
-                            filter: {
-                                conjunction: "and",
-                                conditions: [
-                                    {
-                                        field_name: "ID",
-                                        operator: "is",
-                                        value: [queryID]
-                                    }
-                                ]
-                            },
-                            fields: {
-                                "颗粒列表": JSON.stringify(glistb)
-                            }
-                        })
+                // 1. 如果有数量调整且存在ID，则更新多维表 (updateRecord)
+                if (queryID !== '无' && hasVariance) {
+                    const glistb = state.completedReport.tasks.map(t => {
+                        if (t.rawPartObj) {
+                            const updatedObj = { ...t.rawPartObj };
+                            if ('用量' in updatedObj) updatedObj['用量'] = t.quantity;
+                            else if ('数量' in updatedObj) updatedObj['数量'] = t.quantity;
+                            else if ('qty' in updatedObj) updatedObj['qty'] = t.quantity;
+                            else updatedObj['用量'] = t.quantity; 
+                            return updatedObj;
+                        }
+                        return { "启蒙件名称": t.partName, "用量": t.quantity };
                     });
 
-                    const data = await response.json();
-                    if (data.code !== 0) {
-                        console.error("Update failed:", data);
-                        alert("云端记录更新失败: " + (data.msg || "未知错误"));
-                        if (btn) {
-                            btn.innerHTML = `<i data-lucide="check" class="w-3 h-3 md:w-4 md:h-4"></i> 完成归档`;
-                            btn.disabled = false;
-                            lucide.createIcons();
-                        }
-                        return; // 中断归档
+                    payloads.push({
+                        action: 'updateRecord',
+                        BitableUUID: 'BitableUUID084',
+                        filter: {
+                            conjunction: "and",
+                            conditions: [
+                                { field_name: "ID", operator: "is", value: [queryID] }
+                            ]
+                        },
+                        fields: { "颗粒列表": JSON.stringify(glistb) }
+                    });
+                }
+
+                // 2. 新增归档任务 (CommonAddRecord)
+                payloads.push({
+                    action: 'CommonAddRecord',
+                    BitableUUID: 'BitableUUID085',
+                    fields: {
+                        "任务描述": `${state.drawingName || '图纸1'} ID:${queryID}`,
+                        "完成情况": "",
+                        "类型": "捡积木归档"
                     }
-                } catch (e) {
-                    console.error("API Update Error:", e);
-                    alert("更新云端数据异常，请检查网络连接！");
+                });
+
+                // 3. 如果存在缺件，整合缺件信息并新增缺件任务 (CommonAddRecord)
+                const shortageTasks = state.completedReport.tasks.filter(t => t.isShortage);
+                if (shortageTasks.length > 0) {
+                    const shortageNames = shortageTasks.map(t => t.partName).join('，');
+                    payloads.push({
+                        action: 'CommonAddRecord',
+                        BitableUUID: 'BitableUUID085',
+                        fields: {
+                            "任务描述": `缺件【${shortageNames}】`,
+                            "完成情况": "",
+                            "类型": "缺件提示"
+                        }
+                    });
+                }
+
+                // 并发执行所有云端同步请求
+                const promises = payloads.map(payload => 
+                    fetch(API_ENDPOINT, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(payload)
+                    }).then(res => res.json())
+                );
+
+                const results = await Promise.all(promises);
+                
+                // 检查是否有任何请求失败
+                const failedResult = results.find(r => r.code !== 0 && r.code !== undefined);
+                if (failedResult) {
+                    console.error("Update failed:", failedResult);
+                    alert("云端记录更新失败: " + (failedResult.msg || "未知错误"));
                     if (btn) {
                         btn.innerHTML = `<i data-lucide="check" class="w-3 h-3 md:w-4 md:h-4"></i> 完成归档`;
                         btn.disabled = false;
                         lucide.createIcons();
                     }
-                    return; // 中断归档
+                    return; // 中断归档，允许用户重试
                 }
+
+            } catch (e) {
+                console.error("API Update Error:", e);
+                alert("更新云端数据异常，请检查网络连接！");
+                if (btn) {
+                    btn.innerHTML = `<i data-lucide="check" class="w-3 h-3 md:w-4 md:h-4"></i> 完成归档`;
+                    btn.disabled = false;
+                    lucide.createIcons();
+                }
+                return; // 中断归档，允许用户重试
             }
 
             state.completedReport = null;
