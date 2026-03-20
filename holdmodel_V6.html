@@ -1712,9 +1712,9 @@
                     });
                 }
 
-                // 2. 新增归档任务 (CommonAddRecord)
+                // 2. 新增归档任务 (addRecord)
                 payloads.push({
-                    action: 'CommonAddRecord',
+                    action: 'addRecord',
                     BitableUUID: 'BitableUUID085',
                     fields: {
                         "任务描述": `${state.drawingName || '图纸1'} ID:${queryID}`,
@@ -1723,12 +1723,12 @@
                     }
                 });
 
-                // 3. 如果存在缺件，整合缺件信息并新增缺件任务 (CommonAddRecord)
+                // 3. 如果存在缺件，整合缺件信息并新增缺件任务 (addRecord)
                 const shortageTasks = state.completedReport.tasks.filter(t => t.isShortage);
                 if (shortageTasks.length > 0) {
                     const shortageNames = shortageTasks.map(t => t.partName).join('，');
                     payloads.push({
-                        action: 'CommonAddRecord',
+                        action: 'addRecord',
                         BitableUUID: 'BitableUUID085',
                         fields: {
                             "任务描述": `缺件【${shortageNames}】`,
