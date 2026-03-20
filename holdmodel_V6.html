@@ -1,0 +1,1724 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>WMS Pro - Smart Terminal</title>
+    
+    <!-- Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;700&family=Noto+Sans+SC:wght@400;500;700;900&display=swap" rel="stylesheet">
+    
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- Lucide Icons -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+
+    <!-- 引入 Three.js 及模型解析器依赖 -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+    <!-- FBXLoader 依赖 fflate 解析压缩数据 -->
+    <script src="https://cdn.jsdelivr.net/npm/fflate@0.8.2/umd/index.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/OBJLoader.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/FBXLoader.js"></script>
+    
+    <!-- 引入 SheetJS 解析 Excel 文件 -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['Inter', 'Noto Sans SC', 'sans-serif'],
+                        mono: ['JetBrains Mono', 'monospace'],
+                    },
+                    colors: {
+                        bgBase: '#f5f5f7', 
+                        glass: 'rgba(255, 255, 255, 0.7)',
+                        brand: {
+                            50: '#eef2ff',
+                            100: '#e0e7ff',
+                            400: '#818cf8',
+                            500: '#6366f1',
+                            600: '#4f46e5',
+                            900: '#312e81',
+                        }
+                    },
+                    boxShadow: {
+                        'glass': '0 20px 40px -15px rgba(0,0,0,0.05)',
+                        'glow': '0 0 20px rgba(99, 102, 241, 0.4)',
+                        'glow-orange': '0 0 20px rgba(249, 115, 22, 0.4)',
+                    },
+                    transitionTimingFunction: {
+                        'spring': 'cubic-bezier(0.16, 1, 0.3, 1)',
+                    }
+                }
+            }
+        }
+    </script>
+
+    <style>
+        body {
+            background-color: #f5f5f7;
+            background-image: radial-gradient(#e5e7eb 1px, transparent 1px);
+            background-size: 24px 24px;
+            overscroll-behavior-y: none;
+        }
+
+        .no-scrollbar::-webkit-scrollbar { display: none; }
+        .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+
+        .glass-panel {
+            background: rgba(255, 255, 255, 0.75);
+            backdrop-filter: blur(24px);
+            -webkit-backdrop-filter: blur(24px);
+            border: 1px solid rgba(255, 255, 255, 0.8);
+            box-shadow: 0 8px 32px 0 rgba(31, 38, 135, 0.05);
+            transition: box-shadow 0.3s ease, transform 0.5s cubic-bezier(0.16, 1, 0.3, 1);
+        }
+
+        @keyframes float {
+            0% { transform: translateY(0px) rotateX(10deg) rotateY(-10deg); }
+            50% { transform: translateY(-5px) rotateX(15deg) rotateY(-5deg); }
+            100% { transform: translateY(0px) rotateX(10deg) rotateY(-10deg); }
+        }
+        .animate-float {
+            animation: float 6s ease-in-out infinite;
+            transform-style: preserve-3d;
+        }
+
+        /* 手机横屏提示动画与样式 */
+        @keyframes phone-rotate {
+            0%, 20% { transform: rotate(-90deg); }
+            40%, 60% { transform: rotate(0deg); }
+            80%, 100% { transform: rotate(-90deg); }
+        }
+        .animate-phone-rotate {
+            animation: phone-rotate 2.5s ease-in-out infinite;
+        }
+        @media screen and (max-width: 1024px) and (orientation: landscape) and (pointer: coarse) {
+            #landscape-overlay {
+                display: flex !important;
+            }
+        }
+        
+        svg text { user-select: none; }
+    </style>
+</head>
+<body class="h-[100dvh] w-screen overflow-hidden text-slate-800 flex flex-col md:flex-row box-border relative select-none md:select-auto">
+
+    <!-- 强制竖屏引导遮罩层 -->
+    <div id="landscape-overlay" class="fixed inset-0 z-[9999] bg-slate-900/95 backdrop-blur-md flex-col items-center justify-center text-white hidden transition-all duration-300">
+        <div class="relative w-24 h-24 flex items-center justify-center mb-4">
+            <div class="absolute inset-0 bg-brand-500 rounded-full opacity-20 animate-ping"></div>
+            <i data-lucide="smartphone" class="w-14 h-14 text-brand-400 animate-phone-rotate"></i>
+        </div>
+        <h2 class="text-2xl font-black mb-2 tracking-tight">请竖屏操作</h2>
+        <p class="text-slate-400 text-sm font-medium">为了获得最佳的作业体验，请旋转您的手机</p>
+    </div>
+
+    <!-- 隐藏的 File Input -->
+    <input type="file" id="excel-upload" accept=".xlsx, .xls, .csv" class="hidden" onchange="handleExcelUpload(event)">
+
+    <!-- Mobile Header -->
+    <header class="md:hidden flex items-center justify-between px-4 py-2.5 glass-panel border-b border-white/50 z-30 shrink-0 relative">
+        <div class="flex items-center gap-2">
+            <div class="w-8 h-8 rounded-lg bg-slate-900 flex items-center justify-center text-white">
+                <i data-lucide="layers" class="w-4 h-4"></i>
+            </div>
+            <h1 class="font-black tracking-tight text-base leading-none">WMS Pro</h1>
+        </div>
+        <button onclick="toggleSidebar()" class="w-9 h-9 flex items-center justify-center bg-white rounded-full shadow-sm border border-slate-200 text-slate-600">
+            <i data-lucide="menu" class="w-4 h-4"></i>
+        </button>
+    </header>
+
+    <!-- Sidebar Overlay -->
+    <div id="sidebar-overlay" class="fixed inset-0 bg-slate-900/20 backdrop-blur-sm z-40 hidden opacity-0 transition-opacity duration-300 md:hidden" onclick="toggleSidebar()"></div>
+
+    <!-- SIDEBAR -->
+    <!-- 优化：将 w-80 改为 w-full md:w-80 使得在移动端能充满全屏 -->
+    <aside id="sidebar" class="fixed md:relative inset-y-0 left-0 transform -translate-x-full md:translate-x-0 transition-transform duration-500 ease-spring z-50 w-full md:w-80 h-full md:h-[calc(100dvh-4rem)] glass-panel border-r border-white/50 flex flex-col shrink-0 md:rounded-[2rem] md:my-8 md:ml-6 shadow-2xl md:shadow-glass">
+        <div class="hidden md:flex p-6 pb-4 items-center gap-3">
+            <div class="w-10 h-10 rounded-xl bg-slate-900 flex items-center justify-center text-white shadow-lg shadow-slate-900/20">
+                <i data-lucide="layers" class="w-5 h-5"></i>
+            </div>
+            <div>
+                <h1 class="font-black tracking-tighter text-lg leading-none">WMS Pro</h1>
+                <p class="text-[10px] uppercase tracking-widest text-slate-400 font-bold mt-1">Smart Terminal</p>
+            </div>
+        </div>
+
+        <div class="md:hidden flex justify-between items-center p-5 border-b border-slate-200/50">
+            <div class="font-bold text-slate-800 text-sm tracking-widest uppercase">清单队列</div>
+            <button onclick="toggleSidebar()" class="text-slate-400 hover:text-slate-800 bg-slate-100 p-2 rounded-full"><i data-lucide="x" class="w-4 h-4"></i></button>
+        </div>
+
+        <div id="sidebar-content" class="flex-1 flex flex-col min-h-0 overflow-hidden px-5 md:px-6 py-6">
+            <!-- Content injected by JS -->
+        </div>
+    </aside>
+
+    <!-- MAIN CONTENT -->
+    <main id="main-area" class="flex-1 h-full flex flex-col p-2 md:p-6 relative z-10 overflow-hidden">
+        <!-- Dashboard Container enforces strict single screen boundaries -->
+        <section id="dashboard-container" class="flex-1 w-full h-full overflow-hidden relative">
+            <!-- Content injected by JS -->
+        </section>
+    </main>
+
+    <!-- ================= JAVASCRIPT LOGIC ================= -->
+    <script>
+        const PART_IMAGES = {
+            "螺丝": "https://cdn-icons-png.flaticon.com/512/3963/3963669.png",
+            "电机": "https://cdn-icons-png.flaticon.com/512/2682/2682496.png",
+            "主板": "https://cdn-icons-png.flaticon.com/512/900/900618.png",
+            "芯片": "https://cdn-icons-png.flaticon.com/512/2897/2897785.png",
+            "轴承": "https://cdn-icons-png.flaticon.com/512/2072/2072800.png",
+            "积木": "https://cdn-icons-png.flaticon.com/512/10398/10398144.png"
+        };
+
+        const PARTS_DB = [
+            { name: "M3沉头螺丝", type: "螺丝", img: PART_IMAGES["螺丝"] },
+            { name: "M4防松螺母", type: "螺丝", img: PART_IMAGES["螺丝"] },
+            { name: "57步进电机", type: "电机", img: PART_IMAGES["电机"] },
+            { name: "主控板(V2)", type: "主板", img: PART_IMAGES["主板"] },
+            { name: "ESP32模块", type: "芯片", img: PART_IMAGES["芯片"] },
+            { name: "608ZZ轴承", type: "轴承", img: PART_IMAGES["轴承"] }
+        ];
+
+        // 统一的柜号格式化工具
+        const formatCabinetId = (id) => id.replace('S-', '小柜').replace('L-', '大柜');
+
+        const generateCabinets = () => {
+            const cabinets = [];
+            let partIndex = 0;
+            const getPart = () => PARTS_DB[(partIndex++) % PARTS_DB.length];
+
+            const createCab = (id, numId, type, x, y) => {
+                const partsInCabinet = [];
+                for(let i=0; i<3; i++) {
+                    partsInCabinet.push({
+                        ...getPart(),
+                        row: Math.floor(Math.random() * (type==='large'?10:15)) + 1,
+                        col: Math.floor(Math.random() * (type==='large'?3:5)) + 1,
+                        stock: Math.floor(Math.random() * 100) + 10
+                    });
+                }
+                const fullDisplayId = (type === 'large' ? '大柜' : '小柜') + numId;
+                return { id, displayId: fullDisplayId, type, x, y, inventory: partsInCabinet, defaultPart: partsInCabinet[0].name };
+            };
+
+            const rightS = [
+                { id: 20, y: 1 }, { id: 19, y: 2 },
+                { id: 18, y: 4 }, { id: 17, y: 5 }, { id: 16, y: 6 }, { id: 15, y: 7 },
+                { id: 14, y: 9 }, { id: 13, y: 10 }, { id: 12, y: 11 }, { id: 11, y: 12 },
+                { id: 10, y: 14 }, { id: 9, y: 15 }, { id: 8, y: 16 }, { id: 7, y: 17 },
+                { id: 6, y: 19 }, { id: 5, y: 20 }, { id: 4, y: 21 }, { id: 3, y: 22 },
+                { id: 2, y: 27 }, { id: 1, y: 28 }
+            ];
+            rightS.forEach(c => cabinets.push(createCab(`S-${c.id}`, `${c.id}`, 'small', 4, c.y)));
+
+            for (let i = 1; i <= 10; i++) {
+                cabinets.push(createCab(`L-${i}`, `${i}`, 'large', 0, 11 - i));
+            }
+
+            cabinets.push(createCab('S-21', '21', 'small', 0, 14));
+            cabinets.push(createCab('S-22', '22', 'small', 0, 19));
+            cabinets.push(createCab('S-23', '23', 'small', 0, 20));
+            cabinets.push(createCab('S-24', '24', 'small', 0, 25));
+            cabinets.push(createCab('S-25', '25', 'small', 0, 26));
+
+            return cabinets;
+        };
+
+        const CABINETS = generateCabinets();
+        const ENTRANCE = { x: 2, y: 30 };
+
+        // 全局核心状态
+        const state = { 
+            pickingTasks: [], 
+            drawingName: null,  
+            isGuiding: false, 
+            currentTaskIndex: 0, 
+            mainView: 'cabinet',
+            jobStartTime: null,
+            completedReport: null,
+            isPreloading: false,
+            preloadProgress: 0,
+            modelsPreloaded: false
+        };
+
+        // ------------------ 云端查询与模型加载预处理服务 ------------------
+        
+        window.GlobalModelCache = {}; 
+        window.GlobalModelIdCache = {}; 
+        window.GlobalLocationCache = {}; // 颗粒名称 -> { loc: 位置, type: 柜体 }
+
+        const batchFetchCloudModelIds = async (partNames) => {
+            if (!partNames || partNames.length === 0) return;
+            
+            const API_ENDPOINT = 'https://stateless.unity.cn/release/2e87e2f7-8488-4b42-9a17-a4dce04e1ec3/CloudPath';
+            const chunkSize = 200;
+            
+            for (let i = 0; i < partNames.length; i += chunkSize) {
+                const chunk = partNames.slice(i, i + chunkSize);
+                const placeholders = chunk.map(() => '?').join(',');
+                // 聚合查询: 颗粒名称, UUID, 位置, 柜体
+                const query = `SELECT 颗粒名称, UUID, 位置, 柜体 FROM Design_Itempicker WHERE 颗粒名称 IN (${placeholders})`;
+                
+                try {
+                    const res = await fetch(API_ENDPOINT, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            action: 'dbOperation',
+                            query: query,
+                            queryParams: chunk
+                        })
+                    });
+                    const data = await res.json();
+                    const records = data.data || data.result || [];
+                    
+                    records.forEach(record => {
+                        const partName = record['颗粒名称'];
+                        if (partName) {
+                            // 处理 UUID 的 "['2587']" 格式
+                            let uuidVal = record['UUID'];
+                            if (typeof uuidVal === 'string' && uuidVal.startsWith('[')) {
+                                try {
+                                    const parsed = JSON.parse(uuidVal);
+                                    if (Array.isArray(parsed) && parsed.length > 0) uuidVal = parsed[0];
+                                } catch(e) {}
+                            } else if (Array.isArray(uuidVal) && uuidVal.length > 0) {
+                                uuidVal = uuidVal[0];
+                            }
+                            if (uuidVal) window.GlobalModelIdCache[partName] = String(uuidVal);
+
+                            // 缓存位置与柜体数据
+                            if (record['位置'] || record['柜体']) {
+                                window.GlobalLocationCache[partName] = {
+                                    loc: record['位置'] || '',
+                                    type: record['柜体'] || ''
+                                };
+                            }
+                        }
+                    });
+                } catch (e) {
+                    console.error("Batch API Fetch Error:", e);
+                }
+            }
+        };
+
+        const fetchCloudModelId = async (partName) => {
+            if (window.GlobalModelIdCache[partName]) {
+                return window.GlobalModelIdCache[partName];
+            }
+            await batchFetchCloudModelIds([partName]);
+            return window.GlobalModelIdCache[partName] || null;
+        };
+
+        const loadModelAsset = (url, type) => {
+            return new Promise((resolve, reject) => {
+                const loader = type === 'obj' ? new THREE.OBJLoader() : new THREE.FBXLoader();
+                loader.load(url, resolve, undefined, reject);
+            });
+        };
+
+        const processRawModel = (rawModel, partName) => {
+            const baseColors = [0x3b82f6, 0xf59e0b, 0x10b981, 0xef4444, 0x8b5cf6, 0x6366f1];
+            let hash = 0;
+            for (let j = 0; j < partName.length; j++) hash = partName.charCodeAt(j) + ((hash << 5) - hash);
+            const randomColor = baseColors[Math.abs(hash) % baseColors.length];
+            const customMat = new THREE.MeshStandardMaterial({ color: randomColor, metalness: 0.2, roughness: 0.4 });
+            
+            rawModel.traverse((child) => {
+                if (child.isMesh) {
+                    child.material = customMat;
+                }
+            });
+
+            const box = new THREE.Box3().setFromObject(rawModel);
+            const center = box.getCenter(new THREE.Vector3());
+            
+            const wrapper = new THREE.Group();
+            rawModel.position.sub(center); 
+            wrapper.add(rawModel);
+
+            const size = box.getSize(new THREE.Vector3());
+            const maxDim = Math.max(size.x, size.y, size.z);
+            if (maxDim > 0) {
+                const scale = 2 / maxDim;
+                wrapper.scale.set(scale, scale, scale);
+            }
+            return wrapper;
+        };
+
+        window.preloadAllModels = async () => {
+            if (state.pickingTasks.length === 0) return;
+
+            state.isPreloading = true;
+            state.preloadProgress = 0;
+            updateUI();
+
+            const uniqueParts = [...new Set(state.pickingTasks.map(t => t.partName))];
+            
+            const missingUuids = uniqueParts.filter(p => !window.GlobalModelIdCache[p]);
+            if (missingUuids.length > 0) {
+                await batchFetchCloudModelIds(missingUuids);
+            }
+            
+            for (let i = 0; i < uniqueParts.length; i++) {
+                const partName = uniqueParts[i];
+                
+                if (!window.GlobalModelCache[partName]) {
+                    const uuid = window.GlobalModelIdCache[partName];
+                    if (uuid) {
+                        const CDN_BASE = 'https://a.unity.cn/client_api/v1/buckets/181aa46a-4b2b-41d9-9765-38454415dee3/content/简模/';
+                        let loadedModel = null;
+                        try {
+                            loadedModel = await loadModelAsset(`${CDN_BASE}${uuid}.obj`, 'obj');
+                        } catch (e1) {
+                            try {
+                                loadedModel = await loadModelAsset(`${CDN_BASE}${uuid}.fbx`, 'fbx');
+                            } catch (e2) {
+                                console.warn(`预加载失败: OBJ/FBX 均未能抓取 - ${partName}`);
+                            }
+                        }
+                        
+                        if (loadedModel) {
+                            window.GlobalModelCache[partName] = processRawModel(loadedModel, partName);
+                        }
+                    }
+                }
+                
+                state.preloadProgress = Math.round(((i + 1) / uniqueParts.length) * 100);
+                updateUI(); 
+            }
+
+            state.isPreloading = false;
+            state.modelsPreloaded = true;
+            updateUI();
+        };
+
+        // ------------------ URL 参数获取模块 (RecordID) ------------------
+
+        // 云端数据库位置与柜体信息解析器 (解析失败则留空分配)
+        const parseDbLocation = (cacheData) => {
+            if (!cacheData || (!cacheData.loc && !cacheData.type)) {
+                return { cabId: '未分配', row: 0, col: 0, rawStr: '暂无库位信息' };
+            }
+            
+            const locStr = String(cacheData.loc).trim();
+            const typeStr = String(cacheData.type).trim();
+            
+            // 判定大小柜
+            const isLarge = typeStr === '大' || locStr.includes('大') || locStr.toUpperCase().startsWith('L');
+            
+            // 提取位置数字 (例如 "1-2-3" 或 "1柜-2行-3列")
+            const nums = locStr.match(/\d+/g);
+            if (nums && nums.length >= 3) {
+                return {
+                    cabId: `${isLarge ? 'L' : 'S'}-${nums[0]}`,
+                    row: parseInt(nums[1]),
+                    col: parseInt(nums[2]),
+                    rawStr: `${isLarge ? '大柜' : '小柜'} ${locStr}`
+                };
+            }
+            
+            // 格式异常或不完整的记录留空
+            return { cabId: '未分配', row: 0, col: 0, rawStr: `位置异常: ${typeStr} ${locStr}` };
+        };
+
+        const fetchRecordFromURL = async () => {
+            const urlParams = new URLSearchParams(window.location.search);
+            const queryID = urlParams.get('ID');
+            if (!queryID) return;
+
+            const container = document.getElementById('dashboard-container');
+            if(container) {
+                container.innerHTML = `
+                    <div class="flex flex-col items-center justify-center w-full h-full glass-panel rounded-[2rem] animate-pulse">
+                        <i data-lucide="cloud-download" class="w-12 h-12 text-brand-500 mb-4 opacity-80"></i>
+                        <h3 class="text-xl font-black text-slate-800 tracking-tight mb-1">正在同步云端工单数据...</h3>
+                        <p class="text-xs font-mono text-slate-400">ID: ${queryID}</p>
+                        <p class="text-[10px] text-slate-400 mt-6" id="loading-status-text">正在提取清单结构...</p>
+                    </div>
+                `;
+                lucide.createIcons();
+            }
+
+            try {
+                const API_ENDPOINT = 'https://stateless.unity.cn/release/2e87e2f7-8488-4b42-9a17-a4dce04e1ec3/CloudPath';
+                const response = await fetch(API_ENDPOINT, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        action: 'getRecords',
+                        BitableUUID: 'BitableUUID084',
+                        filter: {
+                            conjunction: "and",
+                            conditions: [
+                                {
+                                    field_name: "ID",
+                                    operator: "is",
+                                    value: [queryID]
+                                }
+                            ]
+                        }
+                    })
+                });
+
+                const data = await response.json();
+                
+                if (data.code === 0 && data.data && data.data.items && data.data.items.length > 0) {
+                    const record = data.data.items[0];
+                    
+                    const extractFieldText = (fieldData) => {
+                        if (!fieldData) return '';
+                        if (typeof fieldData === 'string') return fieldData;
+                        if (Array.isArray(fieldData)) {
+                            return fieldData.map(item => typeof item === 'object' ? (item.text || '') : String(item)).join('');
+                        }
+                        if (typeof fieldData === 'object') return fieldData.text || '';
+                        return String(fieldData);
+                    };
+
+                    const drawingName = extractFieldText(record.fields['图纸名称']) || '未知图纸';
+                    const listData = record.fields['颗粒列表'] || record.fields['拾件列表'];
+                    const listStr = extractFieldText(listData) || '[]';
+                    
+                    let rawList = [];
+                    try {
+                        const cleanStr = listStr.replace(/[\u200B-\u200D\uFEFF]/g, '').trim();
+                        rawList = JSON.parse(cleanStr);
+                    } catch (err) {
+                        alert('⚠️ 云端数据的颗粒列表格式无法解析为标准 JSON，请检查数据源！');
+                        updateUI();
+                        return;
+                    }
+
+                    if(document.getElementById('loading-status-text')) {
+                        document.getElementById('loading-status-text').innerText = "正在向云端匹配位置与模型资源字典...";
+                    }
+
+                    const uniqueParts = [...new Set(rawList.map(part => part['启蒙件名称'] || part['颗粒名称'] || part['零件名称'] || part['name'] || '未知颗粒'))];
+                    await batchFetchCloudModelIds(uniqueParts); 
+                    console.log(`[WMS Pro] 成功同步了 ${uniqueParts.length} 种颗粒的模型UUID与位置`);
+
+                    let newTasks = [];
+                    rawList.forEach(part => {
+                        const partName = part['启蒙件名称'] || part['颗粒名称'] || part['零件名称'] || part['name'] || '未知颗粒';
+                        const qty = part['用量'] || part['数量'] || part['qty'] || 1;
+                        
+                        // 使用云端配置的位置进行解析，留空者分配为 "未分配"
+                        const dbLocData = window.GlobalLocationCache[partName];
+                        const loc = parseDbLocation(dbLocData);
+                        
+                        newTasks.push({
+                            id: Math.random().toString(36).substr(2),
+                            cabinetId: loc.cabId,
+                            rawInput: loc.rawStr, 
+                            quantity: qty,
+                            originalQuantity: qty,
+                            row: loc.row,
+                            col: loc.col,
+                            partName: partName,
+                            isShortage: false
+                        });
+                    });
+
+                    if (newTasks.length > 0) {
+                        state.pickingTasks = newTasks;
+                        state.drawingName = drawingName;
+                        state.modelsPreloaded = false;
+                        state.isPreloading = false;
+                        state.preloadProgress = 0;
+                        updateUI();
+                    } else {
+                        alert('⚠️ 解析成功，但云端数据列表中没有有效的颗粒数据！');
+                        updateUI();
+                    }
+                } else {
+                    alert('⚠️ 未找到对应的 Record 数据或服务器返回异常！');
+                    updateUI();
+                }
+            } catch (e) {
+                console.error(e);
+                alert('⚠️ 从云端获取数据失败，请检查网络连接。');
+                updateUI();
+            }
+        };
+
+        // ------------------ 3D 渲染器核心机制 (全量序列展示) ------------------
+        let currentRenderSession = 0;
+        let current3DAnimId = null;
+        let currentRenderer = null;
+        let currentSceneControls = null;
+
+        const generateFallbackModel = (type, silverMat, darkMat, pcbMat) => {
+            const group = new THREE.Group();
+            const brickMat = new THREE.MeshStandardMaterial({ color: 0x94a3b8, metalness: 0.1, roughness: 0.2 });
+            const body = new THREE.Mesh(new THREE.BoxGeometry(2, 1.2, 1), brickMat);
+            group.add(body);
+            for(let i of [-0.5, 0.5]) {
+                const stud = new THREE.Mesh(new THREE.CylinderGeometry(0.3, 0.3, 0.4, 16), brickMat);
+                stud.position.set(i, 0.7, 0);
+                group.add(stud);
+            }
+            return group;
+        };
+
+        const init3DViewer = async (partName, type) => {
+            const container = document.getElementById('part-3d-viewer');
+            if(!container) return;
+
+            const session = ++currentRenderSession;
+
+            if(current3DAnimId) cancelAnimationFrame(current3DAnimId);
+            if(currentRenderer) {
+                currentRenderer.dispose();
+                container.innerHTML = '';
+            }
+
+            container.innerHTML = `<div id="model-loader-ui" class="absolute inset-0 flex items-center justify-center bg-white/60 z-20 backdrop-blur-sm"><i data-lucide="loader-2" class="w-6 h-6 animate-spin text-brand-500"></i></div>`;
+            lucide.createIcons();
+
+            const scene = new THREE.Scene();
+            const isMobile = window.innerWidth < 768;
+            const camera = new THREE.PerspectiveCamera(isMobile ? 35 : 40, container.clientWidth / container.clientHeight, 0.1, 100);
+            camera.position.set(0, isMobile ? 2.5 : 3.0, isMobile ? 4.5 : 5.0); 
+
+            const renderer = new THREE.WebGLRenderer({ alpha: true, antialias: true });
+            renderer.setSize(container.clientWidth, container.clientHeight);
+            renderer.setPixelRatio(window.devicePixelRatio);
+            container.appendChild(renderer.domElement);
+            currentRenderer = renderer;
+
+            const controls = new THREE.OrbitControls(camera, renderer.domElement);
+            controls.enableDamping = true;
+            controls.enableZoom = true;
+            controls.autoRotate = false;
+
+            const ambientLight = new THREE.AmbientLight(0xffffff, 0.8);
+            scene.add(ambientLight);
+            const dirLight = new THREE.DirectionalLight(0xffffff, 0.9);
+            dirLight.position.set(5, 10, 7);
+            scene.add(dirLight);
+            const backLight = new THREE.DirectionalLight(0xffffff, 0.5);
+            backLight.position.set(-5, 5, -7);
+            scene.add(backLight);
+
+            const silverMat = new THREE.MeshStandardMaterial({ color: 0xe2e8f0, metalness: 0.8, roughness: 0.2 });
+            const darkMat = new THREE.MeshStandardMaterial({ color: 0x334155, metalness: 0.6, roughness: 0.4 });
+            const pcbMat = new THREE.MeshStandardMaterial({ color: 0x10b981, metalness: 0.2, roughness: 0.8 });
+
+            if (!window.GlobalModelCache[partName]) {
+                const uuid = await fetchCloudModelId(partName);
+                if (session !== currentRenderSession) return;
+
+                if (uuid) {
+                    const CDN_BASE = 'https://a.unity.cn/client_api/v1/buckets/181aa46a-4b2b-41d9-9765-38454415dee3/content/简模/';
+                    let rawModel = null;
+                    try { rawModel = await loadModelAsset(`${CDN_BASE}${uuid}.obj`, 'obj'); } 
+                    catch(e1) {
+                        try { rawModel = await loadModelAsset(`${CDN_BASE}${uuid}.fbx`, 'fbx'); } 
+                        catch(e2) {}
+                    }
+                    if (session !== currentRenderSession) return;
+                    if (rawModel) {
+                        window.GlobalModelCache[partName] = processRawModel(rawModel, partName);
+                    }
+                }
+            }
+
+            const carouselGroup = new THREE.Group();
+            const SPACING = 3.5; 
+
+            state.pickingTasks.forEach((t, idx) => {
+                let modelWrapper = new THREE.Group();
+                let hasModel = false;
+                
+                if (window.GlobalModelCache && window.GlobalModelCache[t.partName]) {
+                    modelWrapper.add(window.GlobalModelCache[t.partName].clone());
+                    hasModel = true;
+                }
+
+                if (!hasModel) {
+                    const fallbackGroup = generateFallbackModel("积木", silverMat, darkMat, pcbMat);
+                    const box = new THREE.Box3().setFromObject(fallbackGroup);
+                    const center = box.getCenter(new THREE.Vector3());
+                    fallbackGroup.position.sub(center);
+                    modelWrapper.add(fallbackGroup);
+                }
+
+                const isCurrent = idx === state.currentTaskIndex;
+                const isPast = idx < state.currentTaskIndex;
+
+                if (!isCurrent) {
+                    const dimMat = new THREE.MeshStandardMaterial({
+                        color: isPast ? 0x94a3b8 : 0xe2e8f0,
+                        metalness: 0.1,
+                        roughness: 0.8,
+                        transparent: true,
+                        opacity: isPast ? 0.3 : 0.6
+                    });
+                    modelWrapper.traverse((child) => {
+                        if (child.isMesh) child.material = dimMat;
+                    });
+                    modelWrapper.scale.setScalar(0.65); 
+                    modelWrapper.position.y = -0.5; 
+                } else {
+                    modelWrapper.scale.setScalar(1.2); 
+                    
+                    const ringGeometry = new THREE.RingGeometry( 1.1, 1.3, 32 );
+                    const ringMat = new THREE.MeshBasicMaterial({ color: 0x6366f1, side: THREE.DoubleSide, transparent: true, opacity: 0.7 });
+                    const ring = new THREE.Mesh(ringGeometry, ringMat);
+                    ring.rotation.x = Math.PI / 2;
+                    ring.position.y = -1.0;
+                    modelWrapper.add(ring);
+
+                    modelWrapper.userData.isCurrent = true;
+                }
+
+                modelWrapper.position.x = idx * SPACING;
+                carouselGroup.add(modelWrapper);
+            });
+
+            carouselGroup.position.x = -state.currentTaskIndex * SPACING;
+            scene.add(carouselGroup);
+
+            const loaderUI = document.getElementById('model-loader-ui');
+            if (loaderUI) loaderUI.remove();
+
+            const animate = () => {
+                current3DAnimId = requestAnimationFrame(animate);
+                controls.update();
+                
+                carouselGroup.children.forEach(child => {
+                    if (child.userData.isCurrent) {
+                        child.rotation.y += 0.01;
+                    }
+                });
+
+                renderer.render(scene, camera);
+            };
+            animate();
+
+            const resizeObserver = new ResizeObserver(() => {
+                if (container.clientWidth > 0 && container.clientHeight > 0) {
+                    camera.aspect = container.clientWidth / container.clientHeight;
+                    camera.updateProjectionMatrix();
+                    renderer.setSize(container.clientWidth, container.clientHeight);
+                }
+            });
+            resizeObserver.observe(container);
+        };
+
+        const mapState = {
+            viewBox: { x: -40, y: -50, w: 340, h: 1080 },
+            isDragging: false,
+            lastX: 0,
+            lastY: 0,
+            startX: 0, 
+            startY: 0,
+            needsFocus: true,
+            clickTarget: null
+        };
+
+        window.mapZoom = (direction) => {
+            const zoom = direction > 0 ? 0.75 : 1.33; 
+            const cx = mapState.viewBox.x + mapState.viewBox.w / 2;
+            const cy = mapState.viewBox.y + mapState.viewBox.h / 2;
+            
+            mapState.viewBox.w *= zoom;
+            mapState.viewBox.h *= zoom;
+            mapState.viewBox.x = cx - mapState.viewBox.w / 2;
+            mapState.viewBox.y = cy - mapState.viewBox.h / 2;
+            
+            const svgEl = document.querySelector('#map-container svg');
+            if(svgEl) {
+                svgEl.style.transition = 'viewBox 0.3s ease-out';
+                svgEl.setAttribute('viewBox', `${mapState.viewBox.x} ${mapState.viewBox.y} ${mapState.viewBox.w} ${mapState.viewBox.h}`);
+            }
+        };
+
+        window.mapFocusCurrent = () => {
+            mapState.needsFocus = true;
+            renderMap();
+        };
+
+        const handleExcelUpload = (e) => {
+            const file = e.target.files[0];
+            if (!file) return;
+
+            const reader = new FileReader();
+            reader.onload = (evt) => {
+                const data = new Uint8Array(evt.target.result);
+                const workbook = XLSX.read(data, {type: 'array'});
+
+                let sheetName = "拾件器";
+                if (!workbook.Sheets[sheetName]) {
+                    sheetName = workbook.SheetNames[0];
+                }
+                const worksheet = workbook.Sheets[sheetName];
+                const rows = XLSX.utils.sheet_to_json(worksheet, {header: 1});
+
+                let newTasks = [];
+                
+                for (let i = 1; i < rows.length; i++) {
+                    const row = rows[i];
+                    if (!row || row.length === 0) continue;
+
+                    const qty = parseInt(row[1]) || 1;
+                    const partName = row[2] || "未知颗粒";
+                    const smallLoc = row[3];
+                    const largeLoc = row[5];
+
+                    let locStr = "";
+                    let isLarge = false;
+
+                    if (smallLoc && String(smallLoc).trim() !== "") {
+                        locStr = String(smallLoc).trim();
+                    } else if (largeLoc && String(largeLoc).trim() !== "") {
+                        locStr = String(largeLoc).trim();
+                        isLarge = true;
+                    } else {
+                        continue; 
+                    }
+
+                    const regex = /^(\d+)[柜-]?(\d+)-(\d+)$/;
+                    const match = locStr.match(regex);
+                    
+                    if (match) {
+                        const cabId = `${isLarge ? "L" : "S"}-${match[1]}`;
+                        
+                        const cab = CABINETS.find(c => c.id === cabId);
+                        if (cab) {
+                            newTasks.push({
+                                id: Math.random().toString(36).substr(2),
+                                cabinetId: cabId,
+                                rawInput: (isLarge ? '大柜' : '小柜') + locStr,
+                                quantity: qty,
+                                originalQuantity: qty,
+                                row: parseInt(match[2]),
+                                col: parseInt(match[3]),
+                                partName: partName,
+                                isShortage: false
+                            });
+                        }
+                    }
+                }
+
+                if (newTasks.length > 0) {
+                    state.pickingTasks = newTasks;
+                    state.drawingName = null; // 清除云端图纸名缓存
+                    state.modelsPreloaded = false;
+                    state.isPreloading = false;
+                    state.preloadProgress = 0;
+                    updateUI();
+                    
+                    const uniqueParts = [...new Set(newTasks.map(t => t.partName))];
+                    batchFetchCloudModelIds(uniqueParts).then(() => {
+                        console.log(`[WMS Pro] 成功批量拉取了 ${uniqueParts.length} 种颗粒的 UUID 缓存`);
+                    });
+
+                } else {
+                    alert("⚠️ 未在文件中找到有效的位置数据，请检查文件格式是否匹配（D列小柜，F列大柜）！");
+                }
+                
+                document.getElementById('excel-upload').value = '';
+            };
+            reader.readAsArrayBuffer(file);
+        };
+
+        const adjustQuantity = (delta) => {
+            if (!state.isGuiding || state.pickingTasks.length === 0) return;
+            const task = state.pickingTasks[state.currentTaskIndex];
+            const newQty = Math.max(0, task.quantity + delta); 
+            if(task.quantity !== newQty) {
+                task.quantity = newQty;
+                updateUI();
+            }
+        };
+
+        const toggleShortage = () => {
+            if (!state.isGuiding || state.pickingTasks.length === 0) return;
+            const task = state.pickingTasks[state.currentTaskIndex];
+            task.isShortage = !task.isShortage;
+            updateUI();
+        };
+
+        const toggleSidebar = () => {
+            const sidebar = document.getElementById('sidebar');
+            const overlay = document.getElementById('sidebar-overlay');
+            if(sidebar.classList.contains('-translate-x-full')) {
+                sidebar.classList.remove('-translate-x-full');
+                overlay.classList.remove('hidden');
+                setTimeout(() => overlay.classList.remove('opacity-0'), 10);
+            } else {
+                sidebar.classList.add('-translate-x-full');
+                overlay.classList.add('opacity-0');
+                setTimeout(() => overlay.classList.add('hidden'), 300);
+            }
+        };
+
+        const switchMainView = (viewName) => {
+            if (viewName === 'map') {
+                mapState.needsFocus = true; 
+            }
+            state.mainView = viewName;
+            updateUI();
+        };
+
+        const updateUI = () => {
+            renderSidebar();
+            renderDashboard(); 
+            renderMap();
+            lucide.createIcons();
+        };
+
+        const formatCabinetIdDisplay = (id) => {
+            if (id === '未分配') return '未分配';
+            return formatCabinetId(id);
+        };
+
+        // 【新增】：快速跳转到指定任务的函数
+        const jumpToTask = (index) => {
+            if (!state.isGuiding) return;
+            if (index >= 0 && index < state.pickingTasks.length) {
+                state.currentTaskIndex = index;
+                if (state.mainView === 'map') {
+                    mapState.needsFocus = true;
+                }
+                
+                // 如果是移动端，点击跳转后自动收起侧边栏以展示主界面
+                if (window.innerWidth < 768) {
+                    const sidebar = document.getElementById('sidebar');
+                    if (!sidebar.classList.contains('-translate-x-full')) {
+                        toggleSidebar();
+                    }
+                }
+                
+                updateUI();
+                setTimeout(scrollToActiveTask, 50);
+            }
+        };
+
+        const renderSidebar = () => {
+            const container = document.getElementById('sidebar-content');
+            const taskListContainer = document.getElementById('task-list-container');
+            const currentScrollTop = taskListContainer ? taskListContainer.scrollTop : 0;
+
+            let progressHtml = '';
+            if (state.isGuiding && state.pickingTasks.length > 0) {
+                const percent = Math.round(((state.currentTaskIndex + 1) / state.pickingTasks.length) * 100);
+                progressHtml = `
+                    <div class="mb-4 bg-white/50 p-3.5 rounded-2xl border border-slate-100 shadow-sm shrink-0">
+                        <div class="flex justify-between items-center text-[10px] font-bold text-slate-500 mb-2 tracking-widest uppercase">
+                            <span>作业总进度</span>
+                            <span class="text-brand-600 font-black bg-brand-50 px-2 py-0.5 rounded-lg flex items-center justify-center">${state.currentTaskIndex + 1} / ${state.pickingTasks.length}</span>
+                        </div>
+                        <div class="w-full bg-slate-200 h-2 rounded-full overflow-hidden">
+                            <div class="bg-brand-500 h-full transition-all duration-500" style="width: ${percent}%"></div>
+                        </div>
+                    </div>
+                `;
+            }
+
+            container.innerHTML = `
+                <div class="flex flex-col h-full min-h-0">
+                    ${!state.isGuiding ? `
+                        <div class="mb-4 shrink-0 flex flex-col gap-2">
+                            <button onclick="document.getElementById('excel-upload').click()" class="w-full py-3.5 bg-slate-900 text-white rounded-2xl text-sm font-bold shadow-lg shadow-slate-900/20 flex justify-center items-center gap-2 hover:bg-slate-800 transition transform hover:scale-[1.02]">
+                                <i data-lucide="file-spreadsheet" class="w-4 h-4 text-emerald-400"></i> 导入 Excel 清单
+                            </button>
+                        </div>
+                    ` : ''}
+                    
+                    ${progressHtml}
+
+                    <div id="task-list-container" class="flex-1 overflow-y-auto no-scrollbar relative min-h-0 bg-slate-50/50 rounded-2xl p-2 -mx-2">
+                        <div class="text-[11px] font-black text-slate-600 tracking-widest mb-3 flex justify-between items-center sticky top-0 bg-[#f8fafc]/95 backdrop-blur-md py-2.5 px-2 z-10 rounded-xl shadow-sm border border-slate-100/50">
+                            <span class="flex items-center gap-1.5"><i data-lucide="list-todo" class="w-3.5 h-3.5 text-brand-500"></i> 任务队列</span>
+                            <span class="bg-brand-100 text-brand-600 px-2 py-1 rounded-lg flex items-center justify-center font-bold leading-none min-w-[24px] text-xs">${state.pickingTasks.length}</span>
+                        </div>
+                        <div class="space-y-2.5 pb-10 px-1">
+                            ${state.pickingTasks.length === 0 ? `<div class="text-center text-slate-400 text-xs py-10 flex flex-col items-center"><div class="w-12 h-12 bg-slate-100 rounded-2xl flex items-center justify-center mb-3"><i data-lucide="inbox" class="w-6 h-6 opacity-40"></i></div>暂无拣货任务</div>` : 
+                            state.pickingTasks.map((task, idx) => {
+                                const isActive = state.isGuiding && idx === state.currentTaskIndex;
+                                const isDone = state.isGuiding && idx < state.currentTaskIndex;
+                                
+                                let qtyDisplayHtml = `<div class="font-mono text-lg md:text-base font-black flex items-center justify-center px-3 py-1.5 rounded-xl bg-slate-200/60 text-slate-700 min-w-[48px]">x${task.quantity}</div>`;
+                                const diff = task.quantity - task.originalQuantity;
+                                if (diff > 0) {
+                                    qtyDisplayHtml = `
+                                        <div class="flex flex-col items-end justify-center">
+                                            <div class="font-mono text-lg md:text-base font-black text-emerald-600 bg-emerald-100 px-3 py-1.5 rounded-xl flex items-center justify-center min-w-[48px]">x${task.quantity}</div>
+                                            <div class="text-[10px] md:text-[9px] text-emerald-500 font-bold mt-1 flex items-center gap-0.5 justify-center"><i data-lucide="arrow-up" class="w-3 h-3 md:w-2.5 md:h-2.5"></i> 多拿${diff}</div>
+                                        </div>
+                                    `;
+                                } else if (diff < 0) {
+                                    qtyDisplayHtml = `
+                                        <div class="flex flex-col items-end justify-center">
+                                            <div class="font-mono text-lg md:text-base font-black text-amber-600 bg-amber-100 px-3 py-1.5 rounded-xl flex items-center justify-center min-w-[48px]">x${task.quantity}</div>
+                                            <div class="text-[10px] md:text-[9px] text-amber-500 font-bold mt-1 flex items-center gap-0.5 justify-center"><i data-lucide="arrow-down" class="w-3 h-3 md:w-2.5 md:h-2.5"></i> 少拿${Math.abs(diff)}</div>
+                                        </div>
+                                    `;
+                                }
+
+                                // 【修改】：在 div 上增加了 onclick="jumpToTask(${idx})" 和 cursor-pointer 以及 hover 效果强化
+                                return `
+                                <div ${isActive ? 'id="active-task-item"' : ''} onclick="jumpToTask(${idx})" class="cursor-pointer group p-3 md:p-3.5 rounded-2xl border transition-all duration-300 ${isActive ? 'bg-brand-500 text-white shadow-lg shadow-brand-500/30 border-brand-500 scale-[1.02] transform' : isDone ? 'bg-slate-100/50 opacity-60 border-transparent hover:opacity-100' : 'bg-white border-slate-200 hover:border-brand-200 hover:shadow-sm'}">
+                                    <div class="flex items-center gap-3">
+                                        <div class="w-8 h-8 md:w-7 md:h-7 rounded-xl flex justify-center items-center text-xs font-black shrink-0 ${isActive ? 'bg-white/20 text-white shadow-sm' : isDone ? 'bg-emerald-100 text-emerald-600' : 'bg-slate-100 text-slate-500'}">${isDone ? '<i data-lucide="check" class="w-4 h-4 md:w-3.5 md:h-3.5"></i>' : idx + 1}</div>
+                                        
+                                        <div class="flex-1 min-w-0 flex flex-col justify-center">
+                                            <div class="text-[11px] md:text-xs font-bold ${isActive ? 'text-white/90' : 'text-slate-500'} truncate mb-1 md:mb-0.5 flex items-center gap-1.5">
+                                                ${task.partName}
+                                                ${task.isShortage ? `<span class="bg-red-500 text-white text-[9px] px-1.5 py-0.5 rounded-md flex items-center gap-0.5 font-black leading-none"><i data-lucide="alert-triangle" class="w-2 h-2"></i>缺件</span>` : ''}
+                                            </div>
+                                            <div class="text-xl md:text-base font-black tracking-tight leading-none flex items-baseline">
+                                                ${task.cabinetId === '未分配' ? `<span class="${isActive ? 'text-white' : 'text-amber-500'} text-sm">暂无库位信息</span>` : `${formatCabinetIdDisplay(task.cabinetId)} <span class="font-bold opacity-60 text-base md:text-xs ml-1.5 md:ml-1">${task.row}-${task.col}</span>`}
+                                            </div>
+                                        </div>
+                                        
+                                        ${qtyDisplayHtml}
+                                    </div>
+                                </div>`
+                            }).join('')}
+                        </div>
+                    </div>
+                </div>
+            `;
+
+            const newTaskListContainer = document.getElementById('task-list-container');
+            if (newTaskListContainer) {
+                newTaskListContainer.scrollTo({ top: currentScrollTop, behavior: 'instant' });
+            }
+        };
+
+        const getMapSvgHtml = () => {
+            const mapConfig = { scale: 30, offsetX: 60, offsetY: 20 };
+            const toSvg = (x, y) => ({ cx: x * mapConfig.scale + mapConfig.offsetX, cy: y * mapConfig.scale + mapConfig.offsetY });
+            
+            const MAP_WIDTH = 260;
+            const MAP_HEIGHT = 1000; 
+
+            let pathSvg = '';
+            let activeTargets = [];
+            
+            let targetCx = MAP_WIDTH / 2;
+            let targetCy = MAP_HEIGHT / 2;
+            let hasSpecificTarget = false;
+            
+            if (state.isGuiding && state.pickingTasks.length > 0) {
+                const currentTask = state.pickingTasks[state.currentTaskIndex];
+                const currentCab = CABINETS.find(c => c.id === currentTask.cabinetId);
+                
+                if (currentCab) {
+                    hasSpecificTarget = true;
+                    const tgtPos = toSvg(currentCab.x, currentCab.y);
+                    targetCx = tgtPos.cx;
+                    targetCy = tgtPos.cy;
+
+                    let startPointLog = { x: ENTRANCE.x, y: ENTRANCE.y };
+                    if (state.currentTaskIndex > 0) {
+                        const prevTask = state.pickingTasks[state.currentTaskIndex - 1];
+                        const prevCab = CABINETS.find(c => c.id === prevTask.cabinetId);
+                        if (prevCab) {
+                            startPointLog = { x: prevCab.x > 2 ? prevCab.x - 1 : prevCab.x + 1, y: prevCab.y };
+                        }
+                    }
+
+                    const startPos = toSvg(startPointLog.x, startPointLog.y);
+                    const mid1 = toSvg(2, startPointLog.y);
+                    const mid2 = toSvg(2, currentCab.y);
+                    const approachX = currentCab.x > 2 ? currentCab.x - 1 : currentCab.x + 1;
+                    const endPos = toSvg(approachX, currentCab.y);
+
+                    activeTargets.push({ ...currentCab, pulseColor: 'brand' });
+                    const isFirstTask = state.currentTaskIndex === 0;
+
+                    pathSvg = `
+                        <polyline points="${startPos.cx},${startPos.cy} ${mid1.cx},${mid1.cy} ${mid2.cx},${mid2.cy} ${endPos.cx},${endPos.cy}" 
+                                  fill="none" stroke="#6366f1" stroke-width="4" stroke-dasharray="8 6" stroke-linecap="round" stroke-linejoin="round" opacity="0.8"/>
+                        <circle cx="${startPos.cx}" cy="${startPos.cy}" r="6" fill="${isFirstTask ? '#10b981' : '#cbd5e1'}" />
+                    `;
+                }
+            }
+
+            const svgGrid = `
+                <defs>
+                    <pattern id="dotGrid" width="30" height="30" patternUnits="userSpaceOnUse">
+                        <circle cx="15" cy="15" r="1.5" fill="#cbd5e1" />
+                    </pattern>
+                </defs>
+                <rect x="-5000" y="-5000" width="10000" height="10000" fill="url(#dotGrid)" />
+            `;
+
+            const renderZoneLabel = (x, y, w, h, label) => {
+                const tl = toSvg(x, y); const br = toSvg(x+w, y+h);
+                return `<rect x="${tl.cx}" y="${tl.cy}" width="${br.cx-tl.cx}" height="${br.cy-tl.cy}" fill="#f1f5f9" stroke="#cbd5e1" stroke-width="2" rx="2"/>
+                        <text x="${tl.cx + (br.cx-tl.cx)/2}" y="${tl.cy + (br.cy-tl.cy)/2}" font-size="14" font-weight="900" fill="#64748b" text-anchor="middle" dominant-baseline="middle" letter-spacing="2" ${w<h ? `transform="rotate(90, ${tl.cx + (br.cx-tl.cx)/2}, ${tl.cy + (br.cy-tl.cy)/2})"` : ''}>${label}</text>`;
+            };
+
+            const zonesSvg = `
+                <text x="${toSvg(2, -1).cx}" y="${toSvg(2, -1).cy}" font-size="12" font-weight="bold" fill="#334155" text-anchor="middle" dominant-baseline="middle">备注：黑色字体为小柜子，红色字体为大柜子。</text>
+                ${renderZoneLabel(-4.8, 0.5, 4.3, 10.5, "产品设计")}
+                ${renderZoneLabel(-4.8, 12.5, 4.3, 3, "茶水间")}
+                ${renderZoneLabel(-4.8, 17.5, 4.3, 9, "研发部-拼装研发二组")}
+                ${renderZoneLabel(4.5, 0.5, 5, 28.5, "产品设计")}
+            `;
+
+            const cabinetsSvg = CABINETS.map(cab => {
+                const pos = toSvg(cab.x, cab.y);
+                const w = cab.type === 'large' ? 56 : 42;
+                const h = cab.type === 'large' ? 26 : 20;
+                const isTarget = activeTargets.find(t => t.id === cab.id);
+                
+                let textColor = cab.type === 'large' ? '#ef4444' : '#0f172a';
+                let rectAttrs = `fill="#ffffff" stroke="#94a3b8" stroke-width="1"`;
+                let textAttrs = `fill="${textColor}" font-weight="bold" font-size="${cab.type === 'large' ? '12' : '10'}"`;
+                let pulseEffect = "";
+                let interactiveGroupOpen = `<g class="transition-all duration-300">`;
+                let interactiveGroupClose = `</g>`;
+
+                if (isTarget) {
+                    if (isTarget.pulseColor === 'brand') {
+                        rectAttrs = `fill="#eef2ff" stroke="#6366f1" stroke-width="2"`;
+                        textAttrs = `fill="${textColor}" font-weight="900" font-size="${cab.type === 'large' ? '14' : '11'}"`; 
+                        pulseEffect = `<rect x="${pos.cx - w/2}" y="${pos.cy - h/2}" width="${w}" height="${h}" rx="3" fill="none" stroke="#818cf8" stroke-width="2">
+                            <animate attributeName="stroke-width" values="2; 8; 2" dur="1.5s" repeatCount="indefinite" />
+                            <animate attributeName="stroke-opacity" values="1; 0; 0" dur="1.5s" repeatCount="indefinite" />
+                        </rect>`;
+                        interactiveGroupOpen = `<g class="cabinet-target cursor-pointer hover:opacity-80 transition-opacity">`;
+                    }
+                }
+
+                return `
+                    ${pulseEffect}
+                    ${interactiveGroupOpen}
+                        <rect x="${pos.cx - w/2}" y="${pos.cy - h/2}" width="${w}" height="${h}" rx="3" ${rectAttrs} style="transition: all 0.3s;" />
+                        <text x="${pos.cx}" y="${pos.cy}" text-anchor="middle" dominant-baseline="central" pointer-events="none" ${textAttrs}>${cab.displayId}</text>
+                    ${interactiveGroupClose}
+                `;
+            }).join('');
+
+            return { innerHtml: `${svgGrid}${zonesSvg}${pathSvg}${cabinetsSvg}`, targetCx, targetCy, hasSpecificTarget };
+        };
+
+        const renderMap = () => {
+            const container = document.getElementById('map-container');
+            if(!container) return;
+            
+            const svgData = getMapSvgHtml();
+            let svgEl = container.querySelector('svg');
+            
+            if (!svgEl) {
+                container.innerHTML = `<svg width="100%" height="100%" preserveAspectRatio="xMidYMid slice" style="touch-action: none; user-select: none; -webkit-user-select: none;"></svg>`;
+                svgEl = container.querySelector('svg');
+                
+                svgEl.addEventListener('pointerdown', e => {
+                    if (state.mainView !== 'map') return;
+                    mapState.isDragging = true;
+                    mapState.lastX = e.clientX;
+                    mapState.lastY = e.clientY;
+                    mapState.startX = e.clientX; 
+                    mapState.startY = e.clientY;
+                    mapState.clickTarget = e.target; 
+                    
+                    svgEl.setPointerCapture(e.pointerId);
+                    svgEl.style.cursor = 'grabbing';
+                    svgEl.style.transition = 'none'; 
+                });
+                
+                svgEl.addEventListener('pointermove', e => {
+                    if(!mapState.isDragging || state.mainView !== 'map') return;
+                    const dx = e.clientX - mapState.lastX;
+                    const dy = e.clientY - mapState.lastY;
+                    mapState.lastX = e.clientX;
+                    mapState.lastY = e.clientY;
+                    
+                    const rect = svgEl.getBoundingClientRect();
+                    const scaleX = mapState.viewBox.w / rect.width;
+                    const scaleY = mapState.viewBox.h / rect.height;
+                    
+                    mapState.viewBox.x -= dx * scaleX;
+                    mapState.viewBox.y -= dy * scaleY;
+                    
+                    svgEl.setAttribute('viewBox', `${mapState.viewBox.x} ${mapState.viewBox.y} ${mapState.viewBox.w} ${mapState.viewBox.h}`);
+                });
+                
+                svgEl.addEventListener('pointerup', e => {
+                    if (state.mainView !== 'map') return;
+                    mapState.isDragging = false;
+                    svgEl.releasePointerCapture(e.pointerId);
+                    svgEl.style.cursor = 'grab';
+                    svgEl.style.transition = 'viewBox 0.3s ease-out'; 
+                    
+                    const dx = e.clientX - mapState.startX;
+                    const dy = e.clientY - mapState.startY;
+                    
+                    if (Math.abs(dx) < 5 && Math.abs(dy) < 5) {
+                        if (mapState.clickTarget && mapState.clickTarget.closest && mapState.clickTarget.closest('.cabinet-target')) {
+                            switchMainView('cabinet');
+                        }
+                    }
+                    mapState.clickTarget = null; 
+                });
+                
+                svgEl.addEventListener('wheel', e => {
+                    if (state.mainView !== 'map') return;
+                    e.preventDefault();
+                    const zoom = e.deltaY > 0 ? 1.15 : 0.85;
+                    const rect = svgEl.getBoundingClientRect();
+                    const mx = e.clientX - rect.left;
+                    const my = e.clientY - rect.top;
+                    
+                    const vmx = mapState.viewBox.x + (mx / rect.width) * mapState.viewBox.w;
+                    const vmy = mapState.viewBox.y + (my / rect.height) * mapState.viewBox.h;
+                    
+                    mapState.viewBox.w *= zoom;
+                    mapState.viewBox.h *= zoom;
+                    mapState.viewBox.x = vmx - (mx / rect.width) * mapState.viewBox.w;
+                    mapState.viewBox.y = vmy - (my / rect.height) * mapState.viewBox.h;
+                    
+                    svgEl.setAttribute('viewBox', `${mapState.viewBox.x} ${mapState.viewBox.y} ${mapState.viewBox.w} ${mapState.viewBox.h}`);
+                }, { passive: false });
+            }
+            
+            svgEl.innerHTML = svgData.innerHtml;
+            
+            if (state.mainView === 'map') {
+                svgEl.style.pointerEvents = 'auto';
+                svgEl.style.cursor = 'grab';
+                
+                if (mapState.needsFocus) {
+                    const rect = container.getBoundingClientRect();
+                    const ratio = rect.height / (rect.width || 1);
+                    
+                    mapState.viewBox.w = 550; 
+                    mapState.viewBox.h = 550 * ratio;
+                    
+                    let cx = svgData.hasSpecificTarget ? svgData.targetCx : (260 / 2);
+                    let cy = svgData.hasSpecificTarget ? svgData.targetCy : (1000 / 2);
+
+                    mapState.viewBox.x = cx - mapState.viewBox.w / 2;
+                    mapState.viewBox.y = cy - mapState.viewBox.h / 2;
+                    
+                    mapState.viewBox.y -= mapState.viewBox.h * 0.15; 
+                    
+                    mapState.needsFocus = false;
+                    svgEl.style.transition = 'viewBox 0.5s cubic-bezier(0.16, 1, 0.3, 1)';
+                }
+                
+                requestAnimationFrame(() => {
+                    svgEl.setAttribute('viewBox', `${mapState.viewBox.x} ${mapState.viewBox.y} ${mapState.viewBox.w} ${mapState.viewBox.h}`);
+                });
+            } else {
+                svgEl.style.pointerEvents = 'none';
+                svgEl.setAttribute('viewBox', `-40 -50 ${260 + 80} ${1000 + 80}`); 
+            }
+        };
+
+        const renderDashboard = () => {
+            const container = document.getElementById('dashboard-container');
+            
+            if (state.mainView === 'report' && state.completedReport) {
+                const report = state.completedReport;
+                const totalPlanned = report.tasks.reduce((sum, t) => sum + t.originalQuantity, 0);
+                const totalPicked = report.tasks.reduce((sum, t) => sum + t.quantity, 0);
+                const varianceCount = report.tasks.filter(t => t.quantity !== t.originalQuantity).length;
+                const shortageCount = report.tasks.filter(t => t.isShortage).length;
+
+                container.innerHTML = `
+                    <div class="glass-panel rounded-[2rem] p-4 md:p-10 w-full h-full flex flex-col relative overflow-hidden bg-white/90">
+                        <div class="absolute -top-10 -right-10 opacity-5 pointer-events-none hidden md:block">
+                            <i data-lucide="clipboard-check" class="w-64 h-64 text-emerald-500"></i>
+                        </div>
+
+                        <div class="flex justify-between items-start mb-6 md:mb-8 relative z-10 shrink-0">
+                            <div>
+                                <div class="text-[10px] md:text-xs font-bold text-emerald-500 uppercase tracking-widest mb-1 flex items-center gap-1"><i data-lucide="check-circle-2" class="w-3 h-3 md:w-4 md:h-4"></i> 作业已完成</div>
+                                <h2 class="text-2xl md:text-4xl font-black text-slate-900 tracking-tight">拣货作业报告</h2>
+                                <div class="text-[10px] md:text-sm text-slate-500 font-mono mt-1 md:mt-2">ID: ${report.id} · 耗时: ${report.durationStr}</div>
+                            </div>
+                            <div class="flex flex-col items-end gap-1.5">
+                                <button onclick="closeReport()" class="bg-slate-900 text-white px-4 py-2 md:px-5 md:py-2.5 rounded-xl font-bold text-xs md:text-sm flex items-center gap-1.5 hover:bg-slate-800 transition shadow-lg shadow-slate-900/20">
+                                    <i data-lucide="check" class="w-3 h-3 md:w-4 md:h-4"></i> 完成归档
+                                </button>
+                                <div class="text-[8px] md:text-[10px] text-slate-400 font-medium">确认后按清单扣除库存</div>
+                            </div>
+                        </div>
+
+                        <div class="grid grid-cols-2 md:grid-cols-4 gap-2 md:gap-4 mb-4 md:mb-6 shrink-0 relative z-10">
+                            <div class="bg-slate-50 border border-slate-100 rounded-2xl p-3 md:p-5">
+                                <div class="text-[9px] md:text-xs font-bold text-slate-400 uppercase tracking-widest mb-1 truncate">总计拣货</div>
+                                <div class="text-xl md:text-3xl font-black text-slate-800">${totalPicked} <span class="text-[10px] md:text-sm text-slate-400 font-normal">/ ${totalPlanned}</span></div>
+                            </div>
+                            <div class="bg-slate-50 border border-slate-100 rounded-2xl p-3 md:p-5">
+                                <div class="text-[9px] md:text-xs font-bold text-slate-400 uppercase tracking-widest mb-1 truncate">完成库位</div>
+                                <div class="text-xl md:text-3xl font-black text-slate-800">${report.tasks.length} <span class="text-[10px] md:text-sm text-slate-400 font-normal">个</span></div>
+                            </div>
+                            <div class="bg-${varianceCount > 0 ? 'amber' : 'emerald'}-50 border border-${varianceCount > 0 ? 'amber' : 'emerald'}-100 rounded-2xl p-3 md:p-5">
+                                <div class="text-[9px] md:text-xs font-bold text-${varianceCount > 0 ? 'amber' : 'emerald'}-500 uppercase tracking-widest mb-1 truncate">数量调整</div>
+                                <div class="text-xl md:text-3xl font-black text-${varianceCount > 0 ? 'amber' : 'emerald'}-600">${varianceCount} <span class="text-[10px] md:text-sm opacity-60 font-normal">项</span></div>
+                            </div>
+                            <div class="bg-${shortageCount > 0 ? 'red' : 'slate'}-50 border border-${shortageCount > 0 ? 'red' : 'slate'}-100 rounded-2xl p-3 md:p-5">
+                                <div class="text-[9px] md:text-xs font-bold text-${shortageCount > 0 ? 'red' : 'slate'}-400 uppercase tracking-widest mb-1 truncate">缺件登记</div>
+                                <div class="text-xl md:text-3xl font-black text-${shortageCount > 0 ? 'red' : 'slate'}-600">${shortageCount} <span class="text-[10px] md:text-sm opacity-60 font-normal">项</span></div>
+                            </div>
+                        </div>
+
+                        <div class="flex-1 bg-white border border-slate-100 rounded-2xl overflow-hidden flex flex-col relative z-10 min-h-0 shadow-sm">
+                            <div class="bg-slate-50 px-3 py-2 md:px-5 md:py-3 border-b border-slate-100 grid grid-cols-12 text-[9px] md:text-xs font-bold text-slate-400 uppercase tracking-wider shrink-0">
+                                <div class="col-span-3">库位编号</div>
+                                <div class="col-span-5">物料详情</div>
+                                <div class="col-span-2 text-center">计划数</div>
+                                <div class="col-span-2 text-right">出库</div>
+                            </div>
+                            <div class="flex-1 overflow-y-auto p-1 md:p-2 no-scrollbar">
+                                ${report.tasks.map(t => {
+                                    const diff = t.quantity - t.originalQuantity;
+                                    let qtyHtml = `<span class="font-bold text-slate-700">${t.quantity}</span>`;
+                                    if (diff > 0) qtyHtml = `<span class="font-black text-emerald-600 bg-emerald-100 px-1 md:px-2 py-0.5 rounded">${t.quantity} (+${diff})</span>`;
+                                    if (diff < 0) qtyHtml = `<span class="font-black text-amber-600 bg-amber-100 px-1 md:px-2 py-0.5 rounded">${t.quantity} (${diff})</span>`;
+                                    let shortageBadge = t.isShortage ? `<span class="ml-1 md:ml-2 inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full bg-red-100 text-red-600 text-[8px] md:text-[10px] font-black align-middle"><i data-lucide="alert-triangle" class="w-2.5 h-2.5"></i>缺件</span>` : '';
+
+                                    return `
+                                    <div class="grid grid-cols-12 px-2 py-2 md:px-3 md:py-3 items-center border-b border-slate-50 last:border-0 hover:bg-slate-50 rounded-xl transition-colors">
+                                        <div class="col-span-3 font-mono text-[10px] md:text-sm font-bold text-slate-600">${formatCabinetIdDisplay(t.cabinetId)} <span class="text-[8px] md:text-xs text-slate-400 font-normal hidden sm:inline">${t.cabinetId !== '未分配' ? `(${t.row}-${t.col})` : ''}</span></div>
+                                        <div class="col-span-5 text-[10px] md:text-sm font-bold text-slate-800 truncate pr-2">${t.partName}${shortageBadge}</div>
+                                        <div class="col-span-2 text-center text-[10px] md:text-sm text-slate-400 font-mono">${t.originalQuantity}</div>
+                                        <div class="col-span-2 text-right text-[10px] md:text-sm">${qtyHtml}</div>
+                                    </div>
+                                    `;
+                                }).join('')}
+                            </div>
+                        </div>
+                    </div>
+                `;
+            }
+            else if (state.isGuiding && state.pickingTasks.length > 0) {
+                const task = state.pickingTasks[state.currentTaskIndex];
+                
+                let partInfo = PARTS_DB.find(p => p.name === task.partName);
+                if (!partInfo) {
+                    partInfo = { name: task.partName, type: "积木", img: PART_IMAGES["积木"] };
+                }
+
+                const isUnassigned = task.cabinetId === '未分配';
+                const isLarge = task.cabinetId.startsWith('L-');
+                const rows = isLarge ? 10 : 15, cols = isLarge ? 3 : 5;
+
+                if (state.mainView === 'cabinet') {
+                    const tasksInCabinet = state.pickingTasks.filter(t => t.cabinetId === task.cabinetId);
+
+                    let gridHtml = '';
+                    let gridStyle = '';
+
+                    if (isUnassigned) {
+                        gridHtml = `
+                            <div class="col-span-full flex flex-col items-center justify-center text-slate-400 h-full w-full py-8 text-center bg-white/50 rounded-xl">
+                                <i data-lucide="package-x" class="w-12 h-12 mb-3 opacity-30 text-slate-500"></i>
+                                <p class="text-sm font-black text-slate-500">该零件暂无物理库位信息</p>
+                                <p class="text-[10px] mt-1 font-bold">系统无法提供网格指引，请人工核对或留空</p>
+                            </div>`;
+                        gridStyle = `display: flex; width: 100%; height: 100%; align-items: center; justify-content: center;`;
+                    } else {
+                        gridStyle = `display: grid; grid-template-rows: repeat(${rows}, minmax(0, 1fr)); grid-template-columns: repeat(${cols}, minmax(0, 1fr)); width: 100%; height: 100%; gap: 2px;`;
+                        
+                        for(let r=1; r<=rows; r++) {
+                            for(let c=1; c<=cols; c++) {
+                                const isCurrentTarget = (r === task.row && c === task.col);
+                                const relatedTasks = tasksInCabinet.filter(t => t.row === r && t.col === c);
+                                const isOtherTarget = !isCurrentTarget && relatedTasks.length > 0;
+                                
+                                let cellClass = 'bg-slate-50/80 border border-slate-200/60 text-slate-300 text-[10px] md:text-xs font-medium';
+                                let cellContent = '<span class="opacity-30">·</span>';
+
+                                if (isCurrentTarget) {
+                                    cellClass = 'bg-gradient-to-b from-orange-400 to-orange-500 text-white shadow-lg shadow-orange-500/40 scale-[1.15] z-10 font-black text-xs md:text-xl border border-white/80 ring-4 ring-orange-500/20';
+                                    cellContent = `${r}-${c}`;
+                                } else if (isOtherTarget) {
+                                    const isAllDone = relatedTasks.every(t => state.pickingTasks.findIndex(pt => pt.id === t.id) < state.currentTaskIndex);
+                                    if (isAllDone) {
+                                        // 移除了过大的字体，使其与默认网格尺寸保持一致
+                                        cellClass = 'bg-emerald-50 border border-emerald-200 text-emerald-500 text-[10px] md:text-xs font-bold opacity-80';
+                                    } else {
+                                        // 移除了 scale-[1.05] 缩放效果和过大的字体，使其与默认网格尺寸保持一致
+                                        cellClass = 'bg-brand-50 border-2 border-brand-400 text-brand-600 text-[10px] md:text-xs font-bold shadow-sm z-0';
+                                    }
+                                    cellContent = `${r}-${c}`;
+                                }
+
+                                gridHtml += `<div class="rounded flex justify-center items-center font-mono transition-all duration-500 ${cellClass}">${cellContent}</div>`;
+                            }
+                        }
+                    }
+
+                    const diff = task.quantity - task.originalQuantity;
+                    let qtyColorClass = "text-white";
+                    let diffIndicatorHtml = `<div class="h-3 md:h-5 mt-0.5 md:mt-1"></div>`; 
+                    
+                    if (diff > 0) {
+                        qtyColorClass = "text-emerald-400";
+                        diffIndicatorHtml = `<div class="h-3 md:h-5 flex items-center justify-center mt-0.5 md:mt-1"><div class="text-emerald-400/90 text-[9px] md:text-[10px] font-bold bg-emerald-400/10 px-1.5 py-0.5 rounded-full flex items-center gap-0.5"><i data-lucide="plus" class="w-2.5 h-2.5 md:w-3 md:h-3"></i>${diff} 增加</div></div>`;
+                    } else if (diff < 0) {
+                        qtyColorClass = "text-amber-400";
+                        diffIndicatorHtml = `<div class="h-3 md:h-5 flex items-center justify-center mt-0.5 md:mt-1"><div class="text-amber-400/90 text-[9px] md:text-[10px] font-bold bg-amber-400/10 px-1.5 py-0.5 rounded-full flex items-center gap-0.5"><i data-lucide="minus" class="w-2.5 h-2.5 md:w-3 md:h-3"></i>${Math.abs(diff)} 减少</div></div>`;
+                    }
+
+                    const totalProgressPercent = Math.round(((state.currentTaskIndex + 1) / state.pickingTasks.length) * 100);
+
+                    container.innerHTML = `
+                        <div class="flex flex-col w-full h-full overflow-hidden pb-1 md:pb-0">
+                            
+                            <div class="w-full shrink-0 mb-3 px-1 md:px-0">
+                                <div class="flex justify-between items-center text-[10px] md:text-xs font-bold text-slate-500 tracking-widest mb-1.5">
+                                    <span>整体拾件进度</span>
+                                    <span class="text-brand-600 font-mono">${state.currentTaskIndex + 1} / ${state.pickingTasks.length} (${totalProgressPercent}%)</span>
+                                </div>
+                                <div class="w-full bg-slate-200 h-1.5 md:h-2 rounded-full overflow-hidden">
+                                    <div class="bg-brand-500 h-full transition-all duration-500" style="width: ${totalProgressPercent}%"></div>
+                                </div>
+                            </div>
+
+                            <div class="flex flex-col-reverse md:flex-row gap-3 md:gap-4 flex-1 min-h-0">
+                                
+                                <!-- Bottom(Mobile) / Left(Desktop): Cabinet Layout (Fully Expand) -->
+                                <div class="glass-panel rounded-[1.5rem] md:rounded-[2rem] p-3 md:p-6 flex flex-col relative flex-1 min-h-0">
+                                    <div class="flex justify-between items-start mb-2 md:mb-4 shrink-0">
+                                        <div class="flex items-center gap-2 md:gap-3">
+                                            <h3 class="text-3xl md:text-4xl font-black text-slate-900 tracking-tight">${formatCabinetIdDisplay(task.cabinetId)}</h3>
+                                            <div class="bg-slate-100 text-slate-500 text-[10px] md:text-xs px-2 py-1 rounded-md font-mono border border-slate-200/50">${isUnassigned ? '<span class="text-amber-500 font-bold">留空</span>' : `${rows}x${cols}`}</div>
+                                        </div>
+                                        <button onclick="switchMainView('map')" class="bg-brand-50 text-brand-600 px-3 py-1.5 md:px-4 md:py-2.5 rounded-xl font-bold text-[10px] md:text-xs flex items-center gap-1.5 hover:bg-brand-100 transition border border-brand-100 shadow-sm" ${isUnassigned ? 'disabled style="opacity: 0.5; cursor: not-allowed;"' : ''}>
+                                            <i data-lucide="map" class="w-3 h-3 md:w-4 md:h-4"></i> 查看导航
+                                        </button>
+                                    </div>
+                                    
+                                    <div class="flex-1 bg-white/50 rounded-xl border border-slate-200/60 p-1 md:p-4 flex items-center justify-center overflow-hidden relative">
+                                        <div class="absolute inset-0 bg-[radial-gradient(#e2e8f0_1px,transparent_1px)] [background-size:16px_16px] pointer-events-none"></div>
+                                        <div class="z-10" style="${gridStyle}">
+                                            ${gridHtml}
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <!-- Top(Mobile) / Right(Desktop): Info & Interactive Action -->
+                                <div class="flex flex-row md:flex-col gap-2 md:gap-4 shrink-0 h-[170px] md:h-full md:w-[320px] w-full">
+                                    <!-- Part Info (3D Model) -->
+                                    <div class="glass-panel rounded-[1.5rem] md:rounded-[2rem] flex flex-col items-center justify-center relative flex-1 min-w-0 bg-white/80 overflow-hidden">
+                                        <div id="part-3d-viewer" class="w-full h-full absolute inset-0 z-10 cursor-grab active:cursor-grabbing"></div>
+                                        <div class="absolute bottom-0 left-0 right-0 text-center z-20 pointer-events-none bg-gradient-to-t from-white/80 via-white/50 to-transparent pt-6 pb-2">
+                                            <h2 class="text-sm md:text-xl font-black text-slate-900 tracking-tight truncate px-2">${task.partName}</h2>
+                                            <div class="text-[8px] md:text-[10px] text-brand-600 font-bold uppercase tracking-wider">${partInfo.type}</div>
+                                        </div>
+                                    </div>
+
+                                    <!-- Interactive Qty Display & Next Button -->
+                                    <div class="glass-panel rounded-[1.5rem] md:rounded-[2rem] bg-slate-900 p-3 md:p-5 flex flex-col justify-between flex-1 min-w-0 relative">
+                                        <div class="absolute -inset-10 bg-brand-500 blur-3xl opacity-20 pointer-events-none"></div>
+                                        
+                                        <div class="absolute top-2.5 left-3 md:top-4 md:left-4 z-20 text-[10px] md:text-xs font-bold text-slate-400 tracking-widest pointer-events-none">
+                                            拾件数量
+                                        </div>
+
+                                        <button onclick="toggleShortage()" class="absolute top-1.5 right-1.5 md:top-3 md:right-3 z-20 ${task.isShortage ? 'bg-red-500 text-white shadow-lg shadow-red-500/30 animate-pulse border-transparent' : 'bg-slate-800/80 backdrop-blur border-slate-700 text-red-400 hover:bg-slate-700'} border text-[9px] md:text-[11px] font-bold px-2 py-1 md:px-2.5 md:py-1.5 rounded-lg flex items-center gap-1 transition-all" title="${task.isShortage ? '取消缺件标记' : '标记缺件'}">
+                                            <i data-lucide="alert-triangle" class="w-3 h-3 md:w-4 md:h-4"></i>
+                                            ${task.isShortage ? '已登记缺件' : '标记缺件'}
+                                        </button>
+
+                                        <div class="text-center w-full flex-1 flex flex-col justify-center relative z-10 mt-3 md:mt-0">
+                                            <div class="flex items-center justify-between md:justify-center gap-1 md:gap-6 w-full">
+                                                <button onclick="adjustQuantity(-1)" class="w-10 h-10 md:w-12 md:h-12 rounded-full bg-white/10 hover:bg-white/20 text-white flex items-center justify-center transition-colors border border-white/10 shrink-0">
+                                                    <i data-lucide="minus" class="w-5 h-5"></i>
+                                                </button>
+                                                
+                                                <div class="flex flex-col items-center justify-center min-w-[60px] md:min-w-[100px]">
+                                                    <div class="text-4xl md:text-6xl font-black ${qtyColorClass} leading-none tracking-tighter transition-colors">
+                                                        ${task.quantity}
+                                                    </div>
+                                                    ${diffIndicatorHtml}
+                                                </div>
+
+                                                <button onclick="adjustQuantity(1)" class="w-10 h-10 md:w-12 md:h-12 rounded-full bg-white/10 hover:bg-white/20 text-white flex items-center justify-center transition-colors border border-white/10 shrink-0">
+                                                    <i data-lucide="plus" class="w-5 h-5"></i>
+                                                </button>
+                                            </div>
+                                        </div>
+
+                                        <div class="flex gap-2 md:gap-3 w-full shrink-0 z-10 mt-2 md:mt-0">
+                                            ${state.currentTaskIndex > 0 ? `
+                                            <button onclick="prevGuidanceStep()" class="w-10 h-10 md:w-12 md:h-12 bg-slate-700 text-white rounded-xl flex justify-center items-center hover:bg-slate-600 transition-colors shrink-0 shadow-lg" title="上一步">
+                                                <i data-lucide="arrow-left" class="w-4 h-4 md:w-5 md:h-5"></i>
+                                            </button>
+                                            ` : ''}
+                                            <button onclick="nextGuidanceStep()" class="flex-1 h-10 md:h-12 bg-brand-500 text-white rounded-xl font-bold flex justify-center items-center gap-1.5 shadow-glow hover:bg-brand-600 transition-colors text-sm">
+                                                下一步 <i data-lucide="arrow-right" class="w-4 h-4 md:w-5 md:h-5"></i>
+                                            </button>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    `;
+
+                    setTimeout(() => {
+                        init3DViewer(task.partName, partInfo.type);
+                    }, 50);
+
+                } 
+                else {
+                    container.innerHTML = `
+                        <div class="w-full h-full relative glass-panel rounded-[2rem] overflow-hidden flex flex-col items-center bg-white/40">
+                            <div class="absolute top-6 left-1/2 transform -translate-x-1/2 z-50 bg-slate-900/90 backdrop-blur text-white px-6 py-3 rounded-full flex items-center gap-2 shadow-xl shadow-slate-900/20 cursor-pointer hover:bg-slate-800 transition-transform hover:scale-105 font-bold text-sm" onclick="switchMainView('cabinet')">
+                                <i data-lucide="undo-2" class="w-4 h-4 text-brand-400"></i> 返回柜面
+                            </div>
+                            <div class="absolute top-20 left-1/2 transform -translate-x-1/2 z-40 bg-white/90 backdrop-blur px-4 py-1.5 rounded-lg text-[10px] font-bold text-slate-500 shadow-sm border border-white/50 text-center pointer-events-none whitespace-nowrap">
+                                自由拖拽缩放，点击<span class="text-brand-600">发光目标柜</span>返回
+                            </div>
+
+                            <div class="absolute bottom-8 right-4 md:right-8 z-50 flex flex-col gap-3">
+                                <button onclick="window.mapFocusCurrent()" class="w-10 h-10 md:w-12 md:h-12 bg-white text-slate-700 rounded-full shadow-xl border border-slate-100 flex items-center justify-center hover:bg-brand-50 hover:text-brand-600 transition-colors" title="重新聚焦"><i data-lucide="crosshair" class="w-4 h-4 md:w-5 md:h-5"></i></button>
+                                <div class="flex flex-col bg-white rounded-2xl shadow-xl border border-slate-100 overflow-hidden">
+                                    <button onclick="window.mapZoom(1)" class="w-10 h-10 md:w-12 md:h-12 flex items-center justify-center text-slate-700 hover:bg-brand-50 hover:text-brand-600 transition-colors border-b border-slate-100" title="放大"><i data-lucide="plus" class="w-4 h-4 md:w-5 md:h-5"></i></button>
+                                    <button onclick="window.mapZoom(-1)" class="w-10 h-10 md:w-12 md:h-12 flex items-center justify-center text-slate-700 hover:bg-brand-50 hover:text-brand-600 transition-colors" title="缩小"><i data-lucide="minus" class="w-4 h-4 md:w-5 md:h-5"></i></button>
+                                </div>
+                            </div>
+
+                            <div class="flex-1 w-full h-full flex items-center justify-center relative z-10" id="map-container">
+                                <!-- SVG dynamically injected here -->
+                            </div>
+                        </div>
+                    `;
+                }
+            } 
+            else {
+                if (state.pickingTasks.length === 0) {
+                    container.innerHTML = `
+                        <div class="flex flex-col md:flex-row gap-4 w-full h-full">
+                            <div class="glass-panel rounded-[2rem] border-dashed border-2 flex flex-col items-center justify-center text-slate-400 flex-1 min-h-[300px]">
+                                <i data-lucide="file-spreadsheet" class="w-12 h-12 text-brand-500 mb-4 opacity-50"></i>
+                                <h3 class="text-lg font-black text-slate-700 mb-2">导入拣货清单</h3>
+                                <p class="text-xs font-bold tracking-widest uppercase mb-6">请上传包含位置信息的 Excel 文件或扫描作业二维码</p>
+                                <button onclick="document.getElementById('excel-upload').click()" class="bg-brand-500 text-white px-6 py-3 rounded-xl font-bold text-sm shadow-glow hover:bg-brand-600 transition-colors flex items-center gap-2">
+                                    <i data-lucide="upload" class="w-4 h-4"></i> 选择 Excel 文件
+                                </button>
+                            </div>
+                            <div class="flex-1 w-full min-h-[300px] glass-panel rounded-[2rem] overflow-hidden flex items-center justify-center opacity-50 grayscale relative" id="map-container">
+                                <!-- SVG dynamically injected here -->
+                            </div>
+                        </div>
+                    `;
+                } else {
+                    let actionAreaHtml = '';
+                    
+                    if (state.isPreloading) {
+                        actionAreaHtml = `
+                            <div class="w-full max-w-xs mt-2">
+                                <div class="flex justify-between items-center mb-2">
+                                    <span class="text-[10px] font-bold text-slate-400 uppercase tracking-widest">预加载进度</span>
+                                    <span class="text-sm font-black text-brand-600">${state.preloadProgress}%</span>
+                                </div>
+                                <div class="w-full h-2.5 bg-slate-100 rounded-full overflow-hidden shadow-inner">
+                                    <div class="h-full bg-brand-500 rounded-full transition-all duration-300" style="width: ${state.preloadProgress}%"></div>
+                                </div>
+                                <p class="text-[10px] text-slate-400 mt-3 text-center animate-pulse">正在从云端并行拉取 3D 资源，请稍候...</p>
+                            </div>
+                        `;
+                    } else if (state.modelsPreloaded) {
+                        actionAreaHtml = `
+                            <div class="flex flex-col items-center gap-3 w-full max-w-xs mt-2">
+                                <div class="text-xs font-bold text-emerald-500 bg-emerald-50 px-4 py-1.5 rounded-full flex items-center gap-1.5 mb-2 border border-emerald-100 shadow-sm"><i data-lucide="check-circle-2" class="w-3.5 h-3.5"></i> 模型资源已全部就绪</div>
+                                <button onclick="startGuidance()" class="w-full bg-brand-500 text-white px-10 py-3.5 rounded-2xl font-black text-lg shadow-glow hover:bg-brand-600 transition-transform hover:scale-105 flex justify-center items-center gap-2">
+                                    <i data-lucide="play" class="w-5 h-5"></i> 开始作业
+                                </button>
+                            </div>
+                        `;
+                    } else {
+                        actionAreaHtml = `
+                            <div class="flex flex-col gap-3 mt-2 w-full max-w-xs">
+                                <button onclick="preloadAllModels()" class="w-full bg-white border border-brand-200 text-brand-600 px-6 py-3.5 rounded-2xl font-bold text-sm shadow-sm hover:bg-brand-50 transition-transform hover:scale-105 flex justify-center items-center gap-2">
+                                    <i data-lucide="cloud-download" class="w-4 h-4"></i> 预加载 3D 模型 (推荐)
+                                </button>
+                                <button onclick="startGuidance()" class="w-full bg-slate-900 text-white px-8 py-3.5 rounded-2xl font-bold text-sm shadow-lg hover:bg-slate-800 transition-transform hover:scale-105 flex justify-center items-center gap-2">
+                                    <i data-lucide="zap" class="w-4 h-4 text-amber-400"></i> 跳过预载，直接开始
+                                </button>
+                            </div>
+                        `;
+                    }
+
+                    // 加入针对图纸名称的标题展示逻辑
+                    const mainTitleText = state.drawingName ? `图纸: ${state.drawingName}` : `已成功读取 ${state.pickingTasks.length} 项任务`;
+                    const subTitleText = state.drawingName ? `云端同步完成，共计 ${state.pickingTasks.length} 种零件颗粒。` : `您可以选择一键预加载所有云端模型资源，确保作业过程中完全零卡顿。`;
+
+                    container.innerHTML = `
+                        <div class="flex flex-col md:flex-row gap-4 w-full h-full">
+                            <div class="glass-panel rounded-[2rem] border-2 border-brand-100 flex flex-col items-center justify-center text-slate-600 flex-1 min-h-[300px] bg-brand-50/40 px-4 py-8">
+                                <div class="w-16 h-16 bg-white rounded-full flex items-center justify-center mb-4 shadow-sm border border-brand-100 text-brand-500">
+                                    <i data-lucide="list-checks" class="w-8 h-8"></i>
+                                </div>
+                                <h3 class="text-xl md:text-2xl font-black text-slate-800 mb-2 tracking-tight text-center">${mainTitleText}</h3>
+                                <p class="text-xs font-medium text-slate-500 mb-6 text-center max-w-sm">${subTitleText}</p>
+                                ${actionAreaHtml}
+                            </div>
+                            <div class="flex-1 w-full min-h-[300px] glass-panel rounded-[2rem] overflow-hidden flex items-center justify-center opacity-90 relative" id="map-container">
+                                <!-- SVG dynamically injected here -->
+                            </div>
+                        </div>
+                    `;
+                }
+            }
+        };
+
+        const startGuidance = () => { 
+            if(state.pickingTasks.length){ 
+                state.pickingTasks.sort((a, b) => {
+                    // 将未分配的颗粒强制排序到作业的最后
+                    if (a.cabinetId === '未分配' && b.cabinetId !== '未分配') return 1;
+                    if (a.cabinetId !== '未分配' && b.cabinetId === '未分配') return -1;
+                    if (a.cabinetId === '未分配' && b.cabinetId === '未分配') return 0;
+
+                    const [typeA, numStrA] = a.cabinetId.split('-');
+                    const [typeB, numStrB] = b.cabinetId.split('-');
+                    if (typeA !== typeB) return typeA === 'S' ? -1 : 1; 
+                    return parseInt(numStrA) - parseInt(numStrB);
+                });
+
+                state.isGuiding = true; 
+                state.currentTaskIndex = 0; 
+                state.mainView = 'cabinet';
+                state.jobStartTime = new Date(); 
+                if(window.innerWidth < 768) toggleSidebar(); 
+                
+                updateUI(); 
+                setTimeout(scrollToActiveTask, 100); 
+            } 
+        };
+
+        const stopGuidance = () => { state.isGuiding = false; updateUI(); };
+
+        const scrollToActiveTask = () => {
+            const container = document.getElementById('task-list-container');
+            const activeItem = document.getElementById('active-task-item');
+            if (container && activeItem) {
+                const targetPos = activeItem.offsetTop - 40; 
+                container.scrollTo({ top: targetPos, behavior: 'smooth' });
+            }
+        };
+
+        const uploadReportToServer = (report) => {
+            console.log("%c[SERVER LOG] 📡 正在上传拣货报告至服务器...", "color: #6366f1; font-weight: bold; font-size: 14px;");
+            console.log(JSON.stringify(report, null, 2));
+            setTimeout(() => {
+                console.log("%c[SERVER LOG] ✅ 报告已成功保存", "color: #10b981; font-weight: bold; font-size: 14px;");
+            }, 800);
+        };
+        
+        const prevGuidanceStep = () => {
+            if (state.currentTaskIndex > 0) { 
+                state.currentTaskIndex--; 
+                if (state.mainView === 'map') {
+                    mapState.needsFocus = true;
+                }
+                updateUI();
+                setTimeout(scrollToActiveTask, 50);
+            }
+        };
+
+        const nextGuidanceStep = () => {
+            if (state.currentTaskIndex < state.pickingTasks.length - 1) { 
+                state.currentTaskIndex++; 
+                if (state.mainView === 'map') {
+                    mapState.needsFocus = true;
+                }
+                updateUI();
+                setTimeout(scrollToActiveTask, 50);
+            }
+            else { 
+                const endTime = new Date();
+                const durationMs = endTime - state.jobStartTime;
+                const durationSec = Math.floor(durationMs / 1000);
+                const mins = Math.floor(durationSec / 60);
+                const secs = durationSec % 60;
+
+                const report = {
+                    id: 'JOB-' + Math.random().toString(36).substr(2, 6).toUpperCase(),
+                    startTime: state.jobStartTime,
+                    endTime: endTime,
+                    durationStr: `${mins}分${secs}秒`,
+                    tasks: [...state.pickingTasks],
+                };
+
+                uploadReportToServer(report);
+
+                state.isGuiding = false; 
+                state.pickingTasks = [];
+                state.drawingName = null;
+                state.completedReport = report;
+                state.mainView = 'report'; 
+                updateUI(); 
+            }
+        };
+
+        const closeReport = () => {
+            state.completedReport = null;
+            state.mainView = 'cabinet';
+            updateUI();
+        };
+
+        // ------------------ 移动端全局手势滑动控制 ------------------
+        let touchStartY = 0;
+        let touchStartX = 0;
+        let swipeTarget = null;
+
+        document.addEventListener('touchstart', (e) => {
+            if (e.changedTouches.length > 0) {
+                touchStartY = e.changedTouches[0].screenY;
+                touchStartX = e.changedTouches[0].screenX;
+                swipeTarget = e.target;
+            }
+        }, { passive: true });
+
+        document.addEventListener('touchend', (e) => {
+            if (!state.isGuiding || state.mainView !== 'cabinet') return;
+
+            if (swipeTarget && (swipeTarget.closest('#part-3d-viewer') || swipeTarget.closest('#task-list-container'))) {
+                return;
+            }
+
+            if (e.changedTouches.length > 0) {
+                let touchEndY = e.changedTouches[0].screenY;
+                let touchEndX = e.changedTouches[0].screenX;
+
+                let deltaY = touchStartY - touchEndY;
+                let deltaX = Math.abs(touchStartX - touchEndX);
+
+                if (Math.abs(deltaY) > 50 && Math.abs(deltaY) > deltaX) {
+                    if (deltaY < 0) {
+                        nextGuidanceStep();
+                    } else {
+                        prevGuidanceStep();
+                    }
+                }
+            }
+        }, { passive: true });
+
+        document.addEventListener('DOMContentLoaded', () => {
+            const urlParams = new URLSearchParams(window.location.search);
+            if (urlParams.has('ID')) {
+                fetchRecordFromURL();
+            } else {
+                updateUI();
+            }
+        });
+
+    </script>
+</body>
+</html>
