@@ -1,0 +1,988 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>WMS Pro - 极致玻璃拟态版</title>
+    
+    <!-- Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;700;900&family=Noto+Sans+SC:wght@400;500;700;900&display=swap" rel="stylesheet">
+    
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- Lucide Icons -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+
+    <!-- Core Libraries -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/tween.js/18.6.4/tween.umd.js"></script>
+
+    <!-- Sequential Dependency Loader -->
+    <script>
+        (function() {
+            const scripts = [
+                "https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js",
+                "https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js",
+                "https://cdn.jsdelivr.net/npm/fflate@0.8.2/umd/index.js",
+                "https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/OBJLoader.js",
+                "https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/FBXLoader.js"
+            ];
+            
+            let i = 0;
+            function loadNext() {
+                if (i >= scripts.length) {
+                    window.dispatchEvent(new Event('WMSDepsLoaded'));
+                    return;
+                }
+                const s = document.createElement('script');
+                s.src = scripts[i++];
+                s.onload = loadNext;
+                document.head.appendChild(s);
+            }
+            loadNext();
+        })();
+    </script>
+
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['Inter', 'Noto Sans SC', 'sans-serif'],
+                        mono: ['JetBrains Mono', 'monospace'],
+                    },
+                    colors: { 
+                        brand: { 400: '#818cf8', 500: '#6366f1', 600: '#4f46e5' }
+                    }
+                }
+            }
+        }
+    </script>
+
+    <style>
+        body { 
+            background-color: #f5f5f7; /* Apple style soft gray */
+            overflow: hidden; 
+            overscroll-behavior-y: none; 
+            -webkit-font-smoothing: antialiased;
+            -moz-osx-font-smoothing: grayscale;
+            text-rendering: optimizeLegibility;
+        }
+        
+        .no-scrollbar::-webkit-scrollbar { display: none; }
+        .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+
+        .swipe-container { position: absolute; inset: 0; overflow: hidden; perspective: 2000px; transform-style: preserve-3d; }
+        .swipe-slide { position: absolute; inset: 0; transform-style: preserve-3d; }
+
+        /* 绝对居中的基础设定 */
+        #cabinet-wall-container {
+            width: 120vw; height: 120vh;
+            position: absolute; left: -10vw; top: -10vh; /* 扩大容器后将其完美居于屏幕几何中心 */
+            transform-style: preserve-3d;
+            transition: transform 0.6s cubic-bezier(0.16, 1, 0.3, 1);
+            transform: rotateX(8deg) rotateY(-18deg) translateZ(-50px) translateY(0vh);
+        }
+
+        .cabinet-grid { 
+            display: grid; gap: 18px; width: 100%; height: 100%; 
+            padding: 15vh 12vw 15vh; 
+            transform-style: preserve-3d; position: relative;
+            align-content: center;
+        }
+        
+        /* Glassmorphism Cards */
+        .grid-cell {
+            background: rgba(255, 255, 255, 0.5); 
+            backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px);
+            border-radius: 16px; 
+            display: flex; align-items: center; justify-content: center;
+            font-family: 'JetBrains Mono', monospace; font-size: 15px; font-weight: 700; color: #94a3b8;
+            box-shadow: 0 10px 30px -10px rgba(0, 0, 0, 0.05), inset 0 1px 0 rgba(255, 255, 255, 0.8);
+            border: 1px solid rgba(255, 255, 255, 0.6);
+            transition: all 0.6s cubic-bezier(0.16, 1, 0.3, 1);
+            position: relative; z-index: 2; 
+            backface-visibility: hidden;
+        }
+        
+        .grid-cell.picked {
+            background: rgba(255, 255, 255, 0.2); color: transparent;
+            box-shadow: inset 0 2px 4px rgba(0,0,0,0.02);
+            border: 1px dashed rgba(148, 163, 184, 0.4); opacity: 0.6; z-index: 1;
+        }
+
+        .drawer-box {
+            position: absolute; inset: -1px; transform-style: preserve-3d;
+            transition: transform 0.8s cubic-bezier(0.16, 1, 0.3, 1);
+            transform: translateZ(0); pointer-events: none; opacity: 0;
+            will-change: transform;
+        }
+        .grid-cell.active { background: transparent; box-shadow: none; border-color: transparent; z-index: 50; }
+        .grid-cell.active .drawer-box { transform: translateZ(100px); opacity: 1; }
+        
+        .drawer-front {
+            position: absolute; inset: 0; 
+            background: linear-gradient(135deg, #6366f1, #4f46e5); color: white;
+            border-radius: 16px; display: flex; align-items: center; justify-content: center;
+            font-size: 28px; font-weight: 900; 
+            box-shadow: inset 0 1px 1px rgba(255,255,255,0.4), 0 20px 40px -10px rgba(99,102,241,0.6);
+            transform: translateZ(0); backface-visibility: hidden;
+            border: 1px solid rgba(255,255,255,0.1);
+        }
+        .drawer-top, .drawer-bottom, .drawer-left, .drawer-right { position: absolute; background: #4338ca; }
+        .drawer-top { top: 0; left: 12px; right: 12px; height: 100px; transform-origin: top; transform: rotateX(-90deg); background: linear-gradient(to bottom, #4f46e5, #4338ca); border-radius: 12px 12px 0 0;}
+        .drawer-bottom { bottom: 0; left: 12px; right: 12px; height: 100px; transform-origin: bottom; transform: rotateX(90deg); background: #312e81; box-shadow: 0 40px 60px -10px rgba(0,0,0,0.5); }
+        .drawer-left { top: 12px; bottom: 12px; left: 0; width: 100px; transform-origin: left; transform: rotateY(90deg); }
+        .drawer-right { top: 12px; bottom: 12px; right: 0; width: 100px; transform-origin: right; transform: rotateY(-90deg); }
+
+        .path-svg { position: absolute; inset: 0; pointer-events: none; z-index: 1; overflow: visible; transform: translateZ(-2px); }
+        @keyframes flowGlow { 0% { stroke-dashoffset: 40; } 100% { stroke-dashoffset: 0; } }
+        .flowing-path { animation: flowGlow 1.2s linear infinite; }
+
+        #part-3d-viewer canvas { 
+            filter: drop-shadow(0 40px 40px rgba(0,0,0,0.15)); 
+            transform-origin: center bottom;
+        }
+
+        .sidebar-collapse { transform: translateX(-100%); opacity: 0; }
+        svg text { user-select: none; }
+
+        .dynamic-ui {
+            --ui-x: 0px;
+            --ui-y: 0px;
+            --anim-y: 0px;
+            --anim-scale: 1;
+            transform: translate(var(--ui-x), calc(var(--ui-y) + var(--anim-y))) scale(var(--anim-scale));
+            transition: transform 0.6s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.4s ease-out;
+        }
+        
+        .interactive-btn {
+            transition: all 0.5s cubic-bezier(0.16, 1, 0.3, 1);
+        }
+        .interactive-btn:active {
+            transform: scale(0.92);
+        }
+    </style>
+</head>
+<body class="h-[100dvh] w-screen flex relative select-none">
+
+    <input type="file" id="excel-upload" accept=".xlsx, .xls, .csv" class="hidden" onchange="handleExcelUpload(event)">
+
+    <!-- Top Left: Sidebar Toggle -->
+    <button onclick="toggleSidebar()" class="fixed top-6 left-6 z-[100] w-12 h-12 rounded-[1rem] bg-white/80 backdrop-blur-xl shadow-[0_8px_30px_-4px_rgba(0,0,0,0.05)] border border-white flex items-center justify-center text-slate-700 hover:shadow-[0_12px_40px_-8px_rgba(0,0,0,0.08)] hover:-translate-y-1 transition-all duration-500 ease-[cubic-bezier(0.16,1,0.3,1)] pointer-events-auto group interactive-btn">
+        <i data-lucide="menu" id="sidebar-icon" class="w-5 h-5 group-active:scale-90 transition-transform"></i>
+    </button>
+
+    <!-- Top Right: View Toggle -->
+    <button id="toggle-map-btn" onclick="toggleMainView()" class="fixed top-6 right-6 z-[100] w-12 h-12 rounded-[1rem] bg-white/80 backdrop-blur-xl border border-white shadow-[0_8px_30px_-4px_rgba(0,0,0,0.05)] flex items-center justify-center text-slate-700 hover:shadow-[0_12px_40px_-8px_rgba(0,0,0,0.08)] hover:-translate-y-1 transition-all duration-500 ease-[cubic-bezier(0.16,1,0.3,1)] pointer-events-auto group interactive-btn">
+        <i data-lucide="map" class="w-5 h-5 group-active:scale-90 transition-transform"></i>
+    </button>
+
+    <!-- Top Pipeline -->
+    <div id="cabinet-pipeline" class="fixed top-6 left-1/2 transform -translate-x-1/2 z-[80] flex items-center gap-2 max-w-[65vw] overflow-x-auto no-scrollbar py-2 px-2 opacity-0 pointer-events-none transition-all duration-500">
+        <!-- Injected via JS -->
+    </div>
+
+    <!-- Left Sidebar (Glassmorphism) -->
+    <aside id="main-sidebar" class="fixed left-0 top-0 bottom-0 w-[320px] p-6 pt-24 z-[90] bg-white/60 backdrop-blur-3xl border-r border-white shadow-[20px_0_60px_-20px_rgba(0,0,0,0.05)] transition-all duration-500 ease-[cubic-bezier(0.16,1,0.3,1)] sidebar-collapse flex flex-col">
+        <div class="px-2 pb-6 flex items-center gap-4 shrink-0">
+            <div class="w-12 h-12 rounded-[1.2rem] bg-gradient-to-br from-brand-400 to-brand-600 shadow-[0_12px_24px_-6px_rgba(99,102,241,0.4),inset_0_1px_1px_rgba(255,255,255,0.4)] flex items-center justify-center text-white"><i data-lucide="layers" class="w-6 h-6"></i></div>
+            <h1 class="font-black text-2xl text-slate-900 tracking-tighter">WMS Pro</h1>
+        </div>
+        
+        <div class="px-2 py-4 mb-4 shrink-0">
+            <div class="flex justify-between items-end mb-3 text-[10px] font-black text-slate-400 uppercase tracking-widest">
+                <span>总作业进度</span><span class="text-brand-600 font-mono text-xs" id="sidebar-progress-text">0 / 0</span>
+            </div>
+            <div class="w-full bg-slate-100/80 shadow-inner h-2.5 rounded-full overflow-hidden p-[2px] border border-slate-200/50">
+                <div id="sidebar-progress-bar" class="bg-gradient-to-r from-brand-400 to-brand-600 h-full rounded-full transition-all duration-500 ease-out shadow-[0_0_10px_rgba(99,102,241,0.5)]" style="width: 0%"></div>
+            </div>
+        </div>
+
+        <div id="task-list-container" class="flex-1 overflow-y-auto no-scrollbar space-y-3 px-1 pb-10"></div>
+    </aside>
+
+    <main class="flex-1 h-full relative z-10 flex flex-col overflow-hidden">
+        
+        <!-- View 1: 2D Topographic Map -->
+        <div id="view-2d-map" class="absolute inset-0 z-50 bg-[#f5f5f7] flex flex-col items-center justify-center transition-opacity duration-500">
+            
+            <div class="absolute bottom-10 right-10 z-50 flex flex-col gap-4">
+                <button onclick="window.mapFocusCurrent()" class="w-14 h-14 bg-white/80 backdrop-blur-xl text-slate-700 rounded-full shadow-[0_8px_30px_-4px_rgba(0,0,0,0.06)] border border-white flex items-center justify-center hover:text-brand-600 hover:-translate-y-1 transition-all duration-500 ease-out pointer-events-auto interactive-btn group" title="重新聚焦"><i data-lucide="crosshair" class="w-5 h-5 group-active:scale-90"></i></button>
+                <div class="flex flex-col bg-white/80 backdrop-blur-xl rounded-[1.5rem] shadow-[0_8px_30px_-4px_rgba(0,0,0,0.06)] border border-white overflow-hidden pointer-events-auto">
+                    <button onclick="window.mapZoom(1)" class="w-14 h-14 flex items-center justify-center text-slate-700 hover:text-brand-600 hover:bg-slate-50/50 transition-all duration-300 group interactive-btn"><i data-lucide="plus" class="w-5 h-5 group-active:scale-90"></i></button>
+                    <div class="w-full h-[1px] bg-slate-100"></div>
+                    <button onclick="window.mapZoom(-1)" class="w-14 h-14 flex items-center justify-center text-slate-700 hover:text-brand-600 hover:bg-slate-50/50 transition-all duration-300 group interactive-btn"><i data-lucide="minus" class="w-5 h-5 group-active:scale-90"></i></button>
+                </div>
+            </div>
+
+            <div id="map-container" class="w-full h-full relative z-10 flex items-center justify-center"></div>
+
+            <div id="empty-state-overlay" class="absolute inset-0 flex items-center justify-center z-20 backdrop-blur-xl bg-[#f5f5f7]/50 transition-all duration-500 pointer-events-auto">
+                <div class="bg-white/80 backdrop-blur-2xl shadow-[0_40px_100px_-20px_rgba(0,0,0,0.08)] border border-white rounded-[2.5rem] p-10 flex flex-col items-center max-w-md w-full hover:-translate-y-2 transition-transform duration-700 ease-[cubic-bezier(0.16,1,0.3,1)]">
+                    <div class="w-20 h-20 rounded-[1.8rem] bg-indigo-50 shadow-[inset_0_2px_4px_rgba(255,255,255,0.8),_0_10px_20px_-5px_rgba(99,102,241,0.15)] border border-white flex items-center justify-center text-brand-500 mb-8">
+                        <i data-lucide="file-spreadsheet" class="w-10 h-10"></i>
+                    </div>
+                    <h2 class="text-2xl font-black text-slate-900 mb-3 tracking-tighter">导入拣货清单</h2>
+                    <p class="text-[10px] text-slate-400 font-bold mb-10 uppercase tracking-widest text-center">请上传带有位置信息的 Excel 文件</p>
+                    <button onclick="document.getElementById('excel-upload').click()" class="w-full bg-slate-900 text-white py-4.5 rounded-[1.2rem] font-bold text-sm tracking-wide shadow-[0_15px_30px_-10px_rgba(0,0,0,0.3),inset_0_1px_1px_rgba(255,255,255,0.2)] hover:shadow-[0_20px_40px_-12px_rgba(0,0,0,0.4)] hover:-translate-y-1 active:scale-[0.98] transition-all duration-500 flex justify-center items-center gap-2">
+                        <i data-lucide="upload" class="w-4 h-4"></i> 选择并解析文件
+                    </button>
+                </div>
+            </div>
+
+            <div id="start-job-overlay" class="absolute bottom-16 left-1/2 transform -translate-x-1/2 z-50 hidden pointer-events-auto">
+                <button onclick="startGuidance()" class="bg-gradient-to-b from-brand-500 to-brand-600 text-white px-14 py-5 rounded-[2.5rem] text-lg font-black tracking-tight shadow-[0_20px_40px_-10px_rgba(99,102,241,0.5),inset_0_1px_1px_rgba(255,255,255,0.3)] hover:shadow-[0_30px_60px_-15px_rgba(99,102,241,0.6)] active:scale-[0.96] transition-all duration-500 ease-[cubic-bezier(0.16,1,0.3,1)] hover:-translate-y-1.5 flex items-center gap-3 border border-indigo-400">
+                    <i data-lucide="rocket" class="w-5 h-5"></i> 启动空间作业
+                </button>
+            </div>
+        </div>
+
+        <!-- View 2: 3D Spatial Picking -->
+        <div id="view-3d-picking" class="absolute inset-0 z-20 hidden" onwheel="handleWheel(event)">
+            
+            <div id="layer1-bg-wall" class="absolute inset-0 z-10 pointer-events-none">
+                <div id="cabinet-wall-container">
+                    <div id="cabinet-view" class="swipe-container">
+                        <div id="swipe-layer-current" class="swipe-slide"></div>
+                        <div id="swipe-layer-next" class="swipe-slide hidden"></div>
+                    </div>
+                </div>
+            </div>
+
+            <div id="layer2-3d-hologram" class="absolute inset-0 z-30 pointer-events-none flex items-center justify-center overflow-hidden dynamic-ui">
+                <div id="hologram-interaction-zone" class="absolute w-[500px] h-[500px] z-40 pointer-events-auto cursor-grab active:cursor-grabbing rounded-full"></div>
+                <div id="part-3d-viewer" class="w-full h-full pointer-events-none"></div>
+            </div>
+
+            <div class="absolute inset-0 z-50 pointer-events-none">
+                <div id="model-loader-ui" class="absolute inset-0 flex flex-col items-center justify-center hidden pointer-events-none">
+                    <div class="w-16 h-16 rounded-[1.5rem] bg-white/80 backdrop-blur-xl shadow-[0_20px_40px_-10px_rgba(0,0,0,0.08)] border border-white flex items-center justify-center mb-4">
+                        <i data-lucide="loader-2" class="w-8 h-8 animate-spin text-brand-600"></i>
+                    </div>
+                </div>
+
+                <div class="absolute right-8 bottom-1/4 flex flex-col items-center gap-6 pointer-events-auto">
+                    <!-- Quantity Adjusters -->
+                    <button onclick="adjustQuantity(1)" class="interactive-btn group relative flex items-center justify-center w-14 h-14 rounded-full bg-white/80 backdrop-blur-xl shadow-[0_10px_30px_-5px_rgba(0,0,0,0.06)] border border-white text-slate-500 hover:text-brand-600 hover:-translate-y-1">
+                        <i data-lucide="plus" class="w-5 h-5 transition-transform group-hover:scale-110"></i>
+                    </button>
+                    <button onclick="adjustQuantity(-1)" class="interactive-btn group relative flex items-center justify-center w-14 h-14 rounded-full bg-white/80 backdrop-blur-xl shadow-[0_10px_30px_-5px_rgba(0,0,0,0.06)] border border-white text-slate-500 hover:text-brand-600 hover:-translate-y-1">
+                        <i data-lucide="minus" class="w-5 h-5 transition-transform group-hover:scale-110"></i>
+                    </button>
+                    <button onclick="reportShortage()" class="interactive-btn group relative flex items-center justify-center w-14 h-14 rounded-full bg-white/80 backdrop-blur-xl shadow-[0_10px_30px_-5px_rgba(0,0,0,0.06)] border border-white text-red-400 hover:text-red-500 hover:-translate-y-1 mt-2">
+                        <i data-lucide="triangle-alert" class="w-5 h-5 transition-transform group-hover:scale-110"></i>
+                    </button>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <!-- Job Log Modal -->
+    <div id="job-log-overlay" class="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/20 backdrop-blur-md hidden opacity-0 transition-opacity duration-500 pointer-events-auto">
+        <div class="bg-white/90 backdrop-blur-3xl w-[92%] max-w-4xl max-h-[85vh] rounded-[2.5rem] shadow-[0_50px_100px_-20px_rgba(0,0,0,0.15)] border border-white flex flex-col overflow-hidden transform scale-95 transition-transform duration-700 ease-[cubic-bezier(0.16,1,0.3,1)]" id="job-log-modal">
+            <div class="p-8 border-b border-slate-200/50 flex justify-between items-center">
+                <div class="flex items-center gap-5">
+                    <div class="w-14 h-14 rounded-[1.5rem] bg-gradient-to-br from-emerald-400 to-emerald-500 text-white flex items-center justify-center shadow-[inset_0_1px_1px_rgba(255,255,255,0.4),_0_12px_24px_-6px_rgba(16,185,129,0.4)]"><i data-lucide="check-check" class="w-6 h-6"></i></div>
+                    <div>
+                        <h2 class="text-3xl font-black text-slate-900 tracking-tighter">作业已完成</h2>
+                        <p id="log-summary-text" class="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-1">--</p>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="flex-1 overflow-y-auto no-scrollbar relative p-6 bg-slate-50/50">
+                <table class="w-full text-left border-collapse">
+                    <thead class="sticky top-0 bg-white/80 backdrop-blur-xl z-10 shadow-sm rounded-xl overflow-hidden">
+                        <tr>
+                            <th class="py-4 px-5 text-[10px] font-black text-slate-400 uppercase tracking-widest rounded-tl-xl rounded-bl-xl">颗粒资产名称</th>
+                            <th class="py-4 px-5 text-[10px] font-black text-slate-400 uppercase tracking-widest hidden sm:table-cell">物理位置</th>
+                            <th class="py-4 px-5 text-[10px] font-black text-slate-400 uppercase tracking-widest text-center">实际 / 目标</th>
+                            <th class="py-4 px-5 text-[10px] font-black text-slate-400 uppercase tracking-widest text-center rounded-tr-xl rounded-br-xl">状态追踪</th>
+                        </tr>
+                    </thead>
+                    <tbody id="log-table-body" class="divide-y divide-slate-100"></tbody>
+                </table>
+            </div>
+            
+            <div class="p-6 border-t border-slate-200/50 bg-white/50 flex justify-end gap-4">
+                <button onclick="exportLogToExcel()" class="h-12 px-6 rounded-[1.2rem] bg-white shadow-[0_4px_15px_-3px_rgba(0,0,0,0.05)] border border-slate-200 text-slate-600 font-bold hover:text-brand-600 hover:-translate-y-0.5 active:scale-95 transition-all duration-300 flex items-center gap-2 text-sm">
+                    <i data-lucide="download" class="w-4 h-4"></i> 导出日志
+                </button>
+                <button onclick="closeLogAndReset()" class="h-12 px-8 rounded-[1.2rem] bg-slate-900 text-white shadow-[0_10px_20px_-5px_rgba(0,0,0,0.2)] font-bold tracking-wide hover:-translate-y-0.5 active:scale-95 transition-all duration-300 text-sm">
+                    返回数字大厅
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // 通用 Toast 提示函数 (替代系统原生 alert，符合最高设计准则)
+        const showToast = (msg, isError = false) => {
+            const t = document.createElement('div');
+            t.className = `fixed top-10 left-1/2 -translate-x-1/2 px-6 py-3.5 rounded-full font-bold text-[13px] shadow-[0_15px_40px_rgba(0,0,0,0.08)] z-[9999] transition-all duration-500 transform translate-y-[-30px] opacity-0 flex items-center gap-2.5 backdrop-blur-xl ${isError ? 'bg-red-50/90 text-red-600 border border-red-200/50' : 'bg-white/90 text-slate-700 border border-slate-200/50'}`;
+            t.innerHTML = `${isError ? '<i data-lucide="triangle-alert" class="w-4 h-4"></i>' : '<i data-lucide="info" class="w-4 h-4"></i>'} <span>${msg}</span>`;
+            document.body.appendChild(t);
+            lucide.createIcons();
+            requestAnimationFrame(() => { t.classList.remove('translate-y-[-30px]', 'opacity-0'); t.classList.add('translate-y-0', 'opacity-100'); });
+            setTimeout(() => {
+                t.classList.remove('translate-y-0', 'opacity-100'); t.classList.add('translate-y-[-30px]', 'opacity-0');
+                setTimeout(() => t.remove(), 500);
+            }, 3000);
+        };
+
+        const state = { 
+            pickingTasks: [], 
+            isGuiding: false, 
+            currentTaskIndex: -1, 
+            mainView: 'map', 
+            jobStartTime: null,
+            sidebarOpen: false,
+            isAnimating: false,
+            currentCabinetId: null
+        };
+
+        window.GlobalModelCache = {}; 
+        window.GlobalModelIdCache = {}; 
+
+        const formatCabinetId = (id) => id.replace('S-', '小柜').replace('L-', '大柜');
+
+        const generateCabinets = () => {
+            const cabinets = [];
+            const createCab = (id, numId, type, x, y) => ({ id, displayId: (type === 'large' ? '大柜' : '小柜') + numId, type, x, y, rows: type === 'large' ? 10 : 15, cols: type === 'large' ? 3 : 5 });
+
+            const rightS = [
+                { id: 20, y: 1 }, { id: 19, y: 2 }, { id: 18, y: 4 }, { id: 17, y: 5 }, { id: 16, y: 6 }, { id: 15, y: 7 },
+                { id: 14, y: 9 }, { id: 13, y: 10 }, { id: 12, y: 11 }, { id: 11, y: 12 }, { id: 10, y: 14 }, { id: 9, y: 15 }, 
+                { id: 8, y: 16 }, { id: 7, y: 17 }, { id: 6, y: 19 }, { id: 5, y: 20 }, { id: 4, y: 21 }, { id: 3, y: 22 },
+                { id: 2, y: 27 }, { id: 1, y: 28 }
+            ];
+            rightS.forEach(c => cabinets.push(createCab(`S-${c.id}`, `${c.id}`, 'small', 4, c.y)));
+
+            for (let i = 1; i <= 10; i++) cabinets.push(createCab(`L-${i}`, `${i}`, 'large', 0, 11 - i));
+            cabinets.push(createCab('S-21', '21', 'small', 0, 14));
+            cabinets.push(createCab('S-22', '22', 'small', 0, 19));
+            cabinets.push(createCab('S-23', '23', 'small', 0, 20));
+            cabinets.push(createCab('S-24', '24', 'small', 0, 25));
+            cabinets.push(createCab('S-25', '25', 'small', 0, 26));
+
+            return cabinets;
+        };
+
+        const CABINETS = generateCabinets();
+        const ENTRANCE = { x: 2, y: 30 }; 
+
+        const handleExcelUpload = (e) => {
+            const file = e.target.files[0];
+            if (!file) return;
+            if (typeof XLSX === 'undefined') { showToast("解析引擎仍在加载中，请稍候再试", true); return; }
+
+            const reader = new FileReader();
+            reader.onload = (evt) => {
+                const data = new Uint8Array(evt.target.result);
+                const workbook = XLSX.read(data, {type: 'array'});
+                let sheetName = "拾件器";
+                if (!workbook.Sheets[sheetName]) sheetName = workbook.SheetNames[0];
+                const rows = XLSX.utils.sheet_to_json(workbook.Sheets[sheetName], {header: 1});
+
+                let newTasks = [];
+                for (let i = 1; i < rows.length; i++) {
+                    const row = rows[i];
+                    if (!row || row.length === 0) continue;
+                    const qty = parseInt(row[1]) || 1; const partName = row[2] || "Unknown Part";
+                    const smallLoc = row[3]; const largeLoc = row[5];
+                    let locStr = ""; let isLarge = false;
+
+                    if (smallLoc && String(smallLoc).trim() !== "") { locStr = String(smallLoc).trim(); } 
+                    else if (largeLoc && String(largeLoc).trim() !== "") { locStr = String(largeLoc).trim(); isLarge = true; } 
+                    else continue;
+
+                    const match = locStr.match(/^(\d+)[柜-]?(\d+)-(\d+)$/);
+                    if (match) {
+                        const cabId = `${isLarge ? "L" : "S"}-${match[1]}`;
+                        const cab = CABINETS.find(c => c.id === cabId);
+                        if (cab) {
+                            newTasks.push({ id: Math.random().toString(36).substr(2), cabinetId: cabId, displayCab: cab.displayId, quantity: qty, originalQuantity: qty, row: parseInt(match[2]), col: parseInt(match[3]), partName: partName, isShortage: false });
+                        }
+                    }
+                }
+
+                if (newTasks.length > 0) {
+                    state.pickingTasks = newTasks;
+                    document.getElementById('empty-state-overlay').classList.add('hidden');
+                    document.getElementById('start-job-overlay').classList.remove('hidden');
+                    updateUI('up');
+                    batchFetchCloudModelIds([...new Set(newTasks.map(t => t.partName))]);
+                } else showToast("未在文件中找到有效的位置数据，请检查格式 (D列小柜, F列大柜)！", true);
+                document.getElementById('excel-upload').value = '';
+            };
+            reader.readAsArrayBuffer(file);
+        };
+
+        const batchFetchCloudModelIds = async (partNames) => {
+            if (!partNames || partNames.length === 0) return;
+            const API_ENDPOINT = 'https://stateless.unity.cn/release/2e87e2f7-8488-4b42-9a17-a4dce04e1ec3/CloudPath';
+            for (let i = 0; i < partNames.length; i += 200) {
+                const chunk = partNames.slice(i, i + 200);
+                const query = `SELECT 颗粒名称, UUID FROM IT_GBase WHERE 颗粒名称 IN (${chunk.map(()=>'?').join(',')})`;
+                try {
+                    const res = await fetch(API_ENDPOINT, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'dbOperation', query: query, queryParams: chunk }) });
+                    const data = await res.json();
+                    (data.data || data.result || []).forEach(record => { if (record['颗粒名称'] && record['UUID']) window.GlobalModelIdCache[record['颗粒名称']] = record['UUID']; });
+                } catch (e) { console.error("API Error:", e); }
+            }
+        };
+
+        const fetchCloudModelId = async (partName) => {
+            if (!window.GlobalModelIdCache[partName]) await batchFetchCloudModelIds([partName]);
+            return window.GlobalModelIdCache[partName] || null;
+        };
+
+        const loadModelAsset = (url, type) => new Promise((resolve, reject) => new (type === 'obj' ? THREE.OBJLoader : THREE.FBXLoader)().load(url, resolve, undefined, reject));
+
+        const processRawModel = (rawModel, partName) => {
+            const baseColors = [0x6366f1, 0x10b981, 0xf43f5e, 0xf59e0b, 0x8b5cf6, 0x0ea5e9];
+            let hash = 0; for (let j = 0; j < partName.length; j++) hash = partName.charCodeAt(j) + ((hash << 5) - hash);
+            const customMat = new THREE.MeshStandardMaterial({ color: baseColors[Math.abs(hash) % baseColors.length], metalness: 0.1, roughness: 0.2, clearcoat: 0.5 });
+            rawModel.traverse(child => { if (child.isMesh) child.material = customMat; });
+            const box = new THREE.Box3().setFromObject(rawModel);
+            const wrapper = new THREE.Group(); rawModel.position.sub(box.getCenter(new THREE.Vector3())); wrapper.add(rawModel);
+            const size = box.getSize(new THREE.Vector3()); const maxDim = Math.max(size.x, size.y, size.z);
+            if (maxDim > 0) wrapper.scale.setScalar(2 / maxDim);
+            return wrapper;
+        };
+
+        // ================= 3D Engine =================
+        const viewer3D = { scene: null, camera: null, renderer: null, controls: null, activeWrapper: null, labelGroup: null, currentSession: 0, currentPart: null };
+        
+        function init3DPartViewer() {
+            const container = document.getElementById('part-3d-viewer');
+            if (!container) return;
+            viewer3D.scene = new THREE.Scene();
+            viewer3D.camera = new THREE.PerspectiveCamera(35, container.clientWidth / container.clientHeight, 0.1, 100);
+            viewer3D.camera.position.set(0, 3.5, 20); 
+            viewer3D.renderer = new THREE.WebGLRenderer({ alpha: true, antialias: true });
+            viewer3D.renderer.setSize(container.clientWidth, container.clientHeight);
+            viewer3D.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+            container.appendChild(viewer3D.renderer.domElement);
+            
+            const interactZone = document.getElementById('hologram-interaction-zone');
+            viewer3D.controls = new THREE.OrbitControls(viewer3D.camera, interactZone);
+            viewer3D.controls.enableZoom = true; viewer3D.controls.enablePan = false; viewer3D.controls.enableDamping = true; viewer3D.controls.dampingFactor = 0.05;
+
+            viewer3D.scene.add(new THREE.AmbientLight(0xffffff, 0.9));
+            const dir = new THREE.DirectionalLight(0xffffff, 0.6); dir.position.set(5, 10, 7); viewer3D.scene.add(dir); 
+            const dir2 = new THREE.DirectionalLight(0xffffff, 0.4); dir2.position.set(-5, 5, -7); viewer3D.scene.add(dir2);
+
+            const animate = () => {
+                requestAnimationFrame(animate); 
+                viewer3D.controls.update();
+                viewer3D.scene.children.forEach(child => { if (child.isTaskWrapper) child.rotation.y += 0.004; });
+                if (state.mainView === 'cabinet') viewer3D.renderer.render(viewer3D.scene, viewer3D.camera);
+            };
+            animate();
+
+            new ResizeObserver(() => {
+                if (container.clientWidth > 0 && container.clientHeight > 0) {
+                    viewer3D.camera.aspect = container.clientWidth / container.clientHeight;
+                    viewer3D.camera.updateProjectionMatrix(); viewer3D.renderer.setSize(container.clientWidth, container.clientHeight);
+                }
+            }).observe(container);
+        }
+
+        function createVolumetricText(text, isShortage) {
+            const canvas = document.createElement('canvas'); canvas.width = 1200; canvas.height = 256; const ctx = canvas.getContext('2d');
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            ctx.font = "900 110px 'Noto Sans SC', 'Inter', sans-serif"; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+            
+            ctx.lineWidth = 18; ctx.strokeStyle = '#ffffff'; ctx.strokeText(text, canvas.width/2, 128);
+            
+            const gradient = ctx.createLinearGradient(0, 40, 0, 216);
+            if (isShortage) { gradient.addColorStop(0, '#f87171'); gradient.addColorStop(1, '#dc2626'); } 
+            else { gradient.addColorStop(0, '#818cf8'); gradient.addColorStop(1, '#4f46e5'); }
+            ctx.fillStyle = gradient; ctx.fillText(text, canvas.width/2, 128);
+
+            const tex = new THREE.CanvasTexture(canvas); tex.anisotropy = 16; tex.minFilter = THREE.LinearMipmapLinearFilter; tex.magFilter = THREE.LinearFilter;
+            const mat = new THREE.MeshStandardMaterial({ map: tex, transparent: true, alphaTest: 0.1, side: THREE.FrontSide, roughness: 0.2, metalness: 0.1 });
+            const geo = new THREE.PlaneGeometry(8.5, 1.81); const group = new THREE.Group();
+            
+            const layers = 15; const depth = 0.015;
+            for(let i = 0; i < layers; i++) { const mesh = new THREE.Mesh(geo, mat); mesh.position.z = (i - layers/2) * depth; group.add(mesh); }
+            const backMesh = new THREE.Mesh(geo, mat); backMesh.position.z = (-layers/2) * depth - 0.01; backMesh.rotation.y = Math.PI; group.add(backMesh);
+            return group;
+        }
+
+        const render3DPreviewAsync = async (partName, initialQty, isShortage, direction = 'up') => {
+            if (!partName) return;
+            
+            // 【核心优化】模型动画期间禁用交互，防止滚动切换时误触缩放
+            if (viewer3D.controls) viewer3D.controls.enabled = false;
+            
+            const session = ++viewer3D.currentSession;
+            const loaderUi = document.getElementById('model-loader-ui'); loaderUi.classList.remove('hidden');
+
+            const newWrapper = new THREE.Group(); newWrapper.isTaskWrapper = true; 
+            let physicalModel = new THREE.Group();
+
+            if (!window.GlobalModelCache[partName]) {
+                const uuid = await fetchCloudModelId(partName);
+                if (session !== viewer3D.currentSession) return;
+                if (uuid) {
+                    const CDN = 'https://a.unity.cn/client_api/v1/buckets/181aa46a-4b2b-41d9-9765-38454415dee3/content/简模/';
+                    let raw = null;
+                    try { raw = await loadModelAsset(`${CDN}${uuid}.obj`, 'obj'); } catch(e1) { try { raw = await loadModelAsset(`${CDN}${uuid}.fbx`, 'fbx'); } catch(e2) {} }
+                    if (session !== viewer3D.currentSession) return;
+                    if (raw) window.GlobalModelCache[partName] = processRawModel(raw, partName);
+                }
+            }
+
+            if (window.GlobalModelCache[partName]) physicalModel.add(window.GlobalModelCache[partName].clone());
+            else { const mat = new THREE.MeshStandardMaterial({ color: 0xe2e8f0, metalness: 0.1, roughness: 0.2 }); physicalModel.add(new THREE.Mesh(new THREE.BoxGeometry(2, 1.2, 1), mat)); }
+            
+            physicalModel.scale.setScalar(2.6); newWrapper.add(physicalModel);
+            const box = new THREE.Box3().setFromObject(physicalModel); let maxY = 1.0; if (box.max.y !== Infinity && box.max.y !== -Infinity) maxY = box.max.y;
+
+            const label3D = createVolumetricText(`${partName}  x  ${initialQty}`, isShortage);
+            label3D.position.y = maxY + 1.8; newWrapper.add(label3D); viewer3D.labelGroup = label3D;
+            loaderUi.classList.add('hidden');
+
+            const oldWrapper = viewer3D.activeWrapper; viewer3D.activeWrapper = newWrapper; const flyDist = 25; 
+            
+            if (oldWrapper) {
+                const targetY = direction === 'up' ? flyDist : -flyDist;
+                // 1. 纯粹上下飞行退场
+                new TWEEN.Tween(oldWrapper.position).to({ y: targetY }, 400).easing(TWEEN.Easing.Cubic.In).start();
+                new TWEEN.Tween(oldWrapper.scale).to({ x: 0.1, y: 0.1, z: 0.1 }, 400).easing(TWEEN.Easing.Cubic.In).onComplete(() => {
+                    viewer3D.scene.remove(oldWrapper); 
+                    
+                    // 2. 在旧模型彻底消失的瞬间，让容器瞬间跳到新区域（无滑动痕迹）
+                    jumpHologramPosition();
+
+                    // 3. 新模型再纯粹上下飞入
+                    viewer3D.scene.add(newWrapper);
+                    newWrapper.position.y = direction === 'up' ? -flyDist : flyDist; newWrapper.scale.set(0.1, 0.1, 0.1);
+                    new TWEEN.Tween(newWrapper.position).to({ y: 0 }, 600).easing(TWEEN.Easing.Back.Out).start();
+                    new TWEEN.Tween(newWrapper.scale).to({ x: 1, y: 1, z: 1 }, 600).easing(TWEEN.Easing.Back.Out).onComplete(() => {
+                        // 【核心优化】模型停稳后，恢复 OrbitControls 的控制权限
+                        if (viewer3D.controls) viewer3D.controls.enabled = true;
+                    }).start();
+                }).start();
+            } else {
+                setTimeout(jumpHologramPosition, 50); // 初次加载时，确保位置计算后出现
+                viewer3D.scene.add(newWrapper); newWrapper.scale.setScalar(0.01);
+                new TWEEN.Tween(newWrapper.scale).to({ x: 1, y: 1, z: 1 }, 800).easing(TWEEN.Easing.Elastic.Out).onComplete(() => {
+                    // 【核心优化】初次加载停稳后，恢复控制权限
+                    if (viewer3D.controls) viewer3D.controls.enabled = true;
+                }).start();
+            }
+        };
+
+        const update3DQuantity = (qty, isShortage) => {
+            if (viewer3D.activeWrapper && viewer3D.labelGroup) {
+                const currentY = viewer3D.labelGroup.position.y;
+                const newLabel3D = createVolumetricText(`${viewer3D.currentPart}  x  ${qty}`, isShortage); newLabel3D.position.y = currentY;
+                viewer3D.activeWrapper.remove(viewer3D.labelGroup); viewer3D.activeWrapper.add(newLabel3D); viewer3D.labelGroup = newLabel3D;
+                newLabel3D.scale.setScalar(0.6); new TWEEN.Tween(newLabel3D.scale).to({ x: 1, y: 1, z: 1 }, 600).easing(TWEEN.Easing.Elastic.Out).start();
+            }
+        };
+
+        // ================= 2D Map Control =================
+        const mapState = { viewBox: { x: -40, y: -50, w: 340, h: 1080 }, isDragging: false, lastX: 0, lastY: 0, startX: 0, startY: 0, needsFocus: true, clickTarget: null };
+
+        window.mapZoom = (dir) => {
+            const zoom = dir > 0 ? 0.75 : 1.33; const cx = mapState.viewBox.x + mapState.viewBox.w / 2; const cy = mapState.viewBox.y + mapState.viewBox.h / 2;
+            mapState.viewBox.w *= zoom; mapState.viewBox.h *= zoom; mapState.viewBox.x = cx - mapState.viewBox.w / 2; mapState.viewBox.y = cy - mapState.viewBox.h / 2;
+            const svgEl = document.querySelector('#map-container svg');
+            if(svgEl) { svgEl.style.transition = 'viewBox 0.5s cubic-bezier(0.16, 1, 0.3, 1)'; svgEl.setAttribute('viewBox', `${mapState.viewBox.x} ${mapState.viewBox.y} ${mapState.viewBox.w} ${mapState.viewBox.h}`); }
+        };
+
+        window.mapFocusCurrent = () => { mapState.needsFocus = true; renderMap(); };
+
+        const renderMap = () => {
+            const container = document.getElementById('map-container'); if(!container) return;
+            const toSvg = (x, y) => ({ cx: x * 30 + 60, cy: y * 30 + 20 });
+            let pathSvg = '', activeTargets = [], cx = 130, cy = 500, hasTarget = false;
+            
+            const uniqueCabVisits = [];
+            if (state.pickingTasks.length > 0) state.pickingTasks.forEach(t => { if (!uniqueCabVisits.includes(t.cabinetId)) uniqueCabVisits.push(t.cabinetId); });
+            
+            let currentCabIdx = -1;
+            if (state.isGuiding && uniqueCabVisits.length > 0) {
+                const currentTask = state.pickingTasks[state.currentTaskIndex]; const currentCabId = currentTask ? currentTask.cabinetId : null;
+                currentCabIdx = uniqueCabVisits.indexOf(currentCabId); if (currentCabIdx === -1) currentCabIdx = 0;
+
+                for (let i = 0; i < uniqueCabVisits.length; i++) {
+                    const pCab = i === 0 ? null : CABINETS.find(c => c.id === uniqueCabVisits[i-1]); const cCab = CABINETS.find(c => c.id === uniqueCabVisits[i]);
+                    if (!cCab) continue;
+                    let startPoint = i === 0 ? toSvg(ENTRANCE.x, ENTRANCE.y) : toSvg(pCab.x > 2 ? pCab.x - 1 : pCab.x + 1, pCab.y);
+                    let endPoint = toSvg(cCab.x > 2 ? cCab.x - 1 : cCab.x + 1, cCab.y);
+                    const m1 = toSvg(2, i === 0 ? ENTRANCE.y : pCab.y); const m2 = toSvg(2, cCab.y);
+
+                    let strokeColor = "#cbd5e1", strokeWidth = "2.5", strokeDash = "6 6", isCurrent = false;
+                    if (i < currentCabIdx) { strokeColor = "#10b981"; strokeWidth = "3.5"; strokeDash = "none"; } 
+                    else if (i === currentCabIdx) { strokeColor = "#6366f1"; strokeWidth = "4.5"; strokeDash = "8 6"; isCurrent = true; }
+
+                    pathSvg += `<polyline points="${startPoint.cx},${startPoint.cy} ${m1.cx},${m1.cy} ${m2.cx},${m2.cy} ${endPoint.cx},${endPoint.cy}" fill="none" stroke="${strokeColor}" stroke-width="${strokeWidth}" stroke-dasharray="${strokeDash}" ${isCurrent ? 'class="flowing-path"' : 'opacity="0.8"'} stroke-linejoin="round" stroke-linecap="round" />`;
+
+                    if (Math.abs(m1.cy - m2.cy) > 10) {
+                        const isDown = m2.cy > m1.cy; const arrowY = m1.cy + (m2.cy - m1.cy) * 0.5; const arrowX = m1.cx;
+                        const arrowPath = isDown ? `M ${arrowX-4} ${arrowY-5} L ${arrowX} ${arrowY+3} L ${arrowX+4} ${arrowY-5}` : `M ${arrowX-4} ${arrowY+5} L ${arrowX} ${arrowY-3} L ${arrowX+4} ${arrowY+5}`;
+                        pathSvg += `<path d="${arrowPath}" fill="none" stroke="${strokeColor}" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>`;
+                    }
+                }
+
+                if (currentCabId) {
+                    const currCab = CABINETS.find(c => c.id === currentCabId);
+                    if (currCab) { hasTarget = true; const tPos = toSvg(currCab.x, currCab.y); cx = tPos.cx; cy = tPos.cy; activeTargets.push(currCab); const sPos = toSvg(2, currCab.y); pathSvg += `<circle cx="${sPos.cx}" cy="${sPos.cy}" r="6" fill="#6366f1" />`; }
+                }
+            }
+
+            const zSvg = (x,y,w,h,l) => { const tl=toSvg(x,y), br=toSvg(x+w,y+h); return `<rect x="${tl.cx}" y="${tl.cy}" width="${br.cx-tl.cx}" height="${br.cy-tl.cy}" fill="#f8fafc" stroke="#e2e8f0" stroke-width="2" rx="6"/><text x="${tl.cx+(br.cx-tl.cx)/2}" y="${tl.cy+(br.cy-tl.cy)/2}" font-size="14" font-weight="900" fill="#94a3b8" text-anchor="middle" dominant-baseline="middle" letter-spacing="2" ${w<h?`transform="rotate(90, ${tl.cx+(br.cx-tl.cx)/2}, ${tl.cy+(br.cy-tl.cy)/2})"`:''}>${l}</text>`; };
+            const bgSvg = `<defs><pattern id="dotGrid" width="30" height="30" patternUnits="userSpaceOnUse"><circle cx="15" cy="15" r="1.5" fill="#e2e8f0"/></pattern></defs><rect x="-5000" y="-5000" width="10000" height="10000" fill="url(#dotGrid)"/>${zSvg(-4.8,0.5,4.3,10.5,"产品设计")}${zSvg(-4.8,12.5,4.3,3,"茶水间")}${zSvg(-4.8,17.5,4.3,9,"研发二组")}${zSvg(4.5,0.5,5,28.5,"产品设计")}`;
+
+            const cabsSvg = CABINETS.map(cab => {
+                const pos = toSvg(cab.x, cab.y), w = cab.type === 'large' ? 56 : 42, h = cab.type === 'large' ? 26 : 20, isTgt = activeTargets.find(t => t.id === cab.id);
+                const rA = isTgt ? `fill="#eef2ff" stroke="#6366f1" stroke-width="2.5" filter="drop-shadow(0 8px 16px rgba(99,102,241,0.3))"` : `fill="#ffffff" stroke="#cbd5e1" stroke-width="1.5" filter="drop-shadow(0 4px 10px rgba(0,0,0,0.03))"`;
+                const tA = `fill="${cab.type === 'large' ? '#ef4444' : '#64748b'}" font-weight="${isTgt?'900':'700'}" font-size="${cab.type === 'large' ? (isTgt?'14':'12') : (isTgt?'11':'10')}"`;
+                
+                let sequenceBadge = ''; const cabIdx = uniqueCabVisits.indexOf(cab.id);
+                if (cabIdx !== -1) {
+                    let badgeBg = "#94a3b8"; 
+                    if (state.isGuiding) { if (cabIdx < currentCabIdx) badgeBg = "#10b981"; else if (cabIdx === currentCabIdx) badgeBg = "#6366f1"; }
+                    sequenceBadge = `<circle cx="${pos.cx + w/2 + 2}" cy="${pos.cy - h/2 - 2}" r="8" fill="${badgeBg}" stroke="#fff" stroke-width="2"/><text x="${pos.cx + w/2 + 2}" y="${pos.cy - h/2 - 2}" fill="#fff" font-size="9" font-weight="900" text-anchor="middle" dominant-baseline="central">${cabIdx + 1}</text>`;
+                }
+                return `${isTgt?`<rect x="${pos.cx-w/2}" y="${pos.cy-h/2}" width="${w}" height="${h}" rx="6" fill="none" stroke="#818cf8" stroke-width="2"><animate attributeName="stroke-width" values="2; 8; 2" dur="1.5s" repeatCount="indefinite"/><animate attributeName="stroke-opacity" values="1; 0; 0" dur="1.5s" repeatCount="indefinite"/></rect>`:''}<g class="${isTgt?'cabinet-target cursor-pointer':''}"><rect x="${pos.cx-w/2}" y="${pos.cy-h/2}" width="${w}" height="${h}" rx="6" ${rA} style="transition: all 0.4s ease;" /><text x="${pos.cx}" y="${pos.cy}" text-anchor="middle" dominant-baseline="central" pointer-events="none" ${tA}>${cab.displayId}</text>${sequenceBadge}</g>`;
+            }).join('');
+
+            let svgEl = container.querySelector('svg');
+            if (!svgEl) {
+                container.innerHTML = `<svg width="100%" height="100%" preserveAspectRatio="xMidYMid slice" style="touch-action:none; user-select:none;"></svg>`; svgEl = container.querySelector('svg');
+                svgEl.addEventListener('pointerdown', e => { if(state.mainView!=='map')return; mapState.isDragging=true; mapState.lastX=e.clientX; mapState.lastY=e.clientY; mapState.startX=e.clientX; mapState.startY=e.clientY; mapState.clickTarget=e.target; svgEl.setPointerCapture(e.pointerId); svgEl.style.cursor='grabbing'; svgEl.style.transition='none'; });
+                svgEl.addEventListener('pointermove', e => { if(!mapState.isDragging||state.mainView!=='map')return; const rect = svgEl.getBoundingClientRect(); mapState.viewBox.x -= (e.clientX-mapState.lastX)*(mapState.viewBox.w/rect.width); mapState.viewBox.y -= (e.clientY-mapState.lastY)*(mapState.viewBox.h/rect.height); mapState.lastX=e.clientX; mapState.lastY=e.clientY; svgEl.setAttribute('viewBox', `${mapState.viewBox.x} ${mapState.viewBox.y} ${mapState.viewBox.w} ${mapState.viewBox.h}`); });
+                svgEl.addEventListener('pointerup', e => { if(state.mainView!=='map')return; mapState.isDragging=false; svgEl.releasePointerCapture(e.pointerId); svgEl.style.cursor='grab'; svgEl.style.transition='viewBox 0.5s cubic-bezier(0.16,1,0.3,1)'; if(Math.abs(e.clientX-mapState.startX)<5 && Math.abs(e.clientY-mapState.startY)<5 && mapState.clickTarget?.closest('.cabinet-target')) switchMainView('cabinet'); mapState.clickTarget=null; });
+                svgEl.addEventListener('wheel', e => { if(state.mainView!=='map')return; e.preventDefault(); const zoom=e.deltaY>0?1.15:0.85; const r=svgEl.getBoundingClientRect(); const mx=e.clientX-r.left, my=e.clientY-r.top; const vmx=mapState.viewBox.x+(mx/r.width)*mapState.viewBox.w, vmy=mapState.viewBox.y+(my/r.height)*mapState.viewBox.h; mapState.viewBox.w*=zoom; mapState.viewBox.h*=zoom; mapState.viewBox.x=vmx-(mx/r.width)*mapState.viewBox.w; mapState.viewBox.y=vmy-(my/r.height)*mapState.viewBox.h; svgEl.setAttribute('viewBox', `${mapState.viewBox.x} ${mapState.viewBox.y} ${mapState.viewBox.w} ${mapState.viewBox.h}`); }, { passive: false });
+            }
+            svgEl.innerHTML = `${bgSvg}${pathSvg}${cabsSvg}`;
+            
+            if (state.mainView === 'map') {
+                svgEl.style.pointerEvents = 'auto'; svgEl.style.cursor = 'grab';
+                if (mapState.needsFocus) {
+                    const rect = container.getBoundingClientRect(); mapState.viewBox.w = 550; mapState.viewBox.h = 550 * (rect.height / (rect.width || 1));
+                    const visualOffsetX = state.sidebarOpen ? (mapState.viewBox.w * 160 / (window.innerWidth || 1)) : 0;
+                    mapState.viewBox.x = (hasTarget?cx:130) - mapState.viewBox.w/2 - visualOffsetX; 
+                    mapState.viewBox.y = (hasTarget?cy:500) - mapState.viewBox.h/2 - mapState.viewBox.h*0.05; 
+                    
+                    mapState.needsFocus = false; svgEl.style.transition = 'viewBox 0.7s cubic-bezier(0.16,1,0.3,1)';
+                }
+                requestAnimationFrame(() => svgEl.setAttribute('viewBox', `${mapState.viewBox.x} ${mapState.viewBox.y} ${mapState.viewBox.w} ${mapState.viewBox.h}`));
+            } else { svgEl.style.pointerEvents = 'none'; svgEl.setAttribute('viewBox', `-40 -50 340 1080`); }
+        };
+
+        function generateGridHTML(cab, taskIndex) {
+            if (!cab) return ''; let html = '';
+            for(let r=1; r<=cab.rows; r++) {
+                for(let c=1; c<=cab.cols; c++) {
+                    let isC = false, isP = false;
+                    for(let i=0; i<=taskIndex; i++) {
+                        const t = state.pickingTasks[i];
+                        if (t && t.cabinetId === cab.id && t.row === r && t.col === c) { if (i === taskIndex) isC = true; else if (i < taskIndex) isP = true; }
+                    }
+                    let cls = "grid-cell", txt = `${r}-${c}`;
+                    if (isC) {
+                        cls += " active"; txt = `<div class="drawer-box"><div class="drawer-front"><span>${r}-${c}</span></div><div class="drawer-top"></div><div class="drawer-bottom"></div><div class="drawer-left"></div><div class="drawer-right"></div></div>`;
+                    } else if (isP) {
+                        cls += " picked"; txt = `<div class="absolute inset-0 flex items-center justify-center text-[10px] opacity-40">${r}-${c}</div><div class="absolute z-10 text-emerald-500 bg-white/80 backdrop-blur-md shadow-sm border border-white/60 rounded-full p-1"><i data-lucide="check" class="w-4 h-4"></i></div>`;
+                    }
+                    html += `<div class="${cls}">${txt}</div>`;
+                }
+            }
+            return html;
+        }
+
+        function renderNavPath(layerIdStr, taskIndex) {
+            const cabEl = document.querySelector(`#swipe-layer-${layerIdStr} .cabinet-grid`); if(!cabEl) return;
+            const oldSvg = cabEl.querySelector('.path-svg'); if(oldSvg) oldSvg.remove();
+            if(taskIndex <= 0) return; 
+            
+            const pTask = state.pickingTasks[taskIndex - 1], cTask = state.pickingTasks[taskIndex];
+            if(!pTask || !cTask || pTask.cabinetId !== cTask.cabinetId) return;
+
+            const cells = cabEl.querySelectorAll('.grid-cell'), cabD = CABINETS.find(c => c.id === cTask.cabinetId); if (!cabD) return;
+
+            setTimeout(() => {
+                const pC = cells[(pTask.row - 1) * cabD.cols + (pTask.col - 1)], cC = cells[(cTask.row - 1) * cabD.cols + (cTask.col - 1)];
+                if (pC && cC) {
+                    const midX = (pC.offsetLeft + pC.offsetWidth/2 + cC.offsetLeft + cC.offsetWidth/2) / 2;
+                    const pathD = `M ${pC.offsetLeft + pC.offsetWidth/2} ${pC.offsetTop + pC.offsetHeight/2} C ${midX} ${pC.offsetTop + pC.offsetHeight/2}, ${midX} ${cC.offsetTop + cC.offsetHeight/2}, ${cC.offsetLeft + cC.offsetWidth/2} ${cC.offsetTop + cC.offsetHeight/2}`;
+                    const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+                    svg.setAttribute("class", "path-svg"); svg.setAttribute("width", cabEl.offsetWidth); svg.setAttribute("height", cabEl.offsetHeight);
+                    svg.innerHTML = `<path d="${pathD}" fill="none" stroke="rgba(255, 255, 255, 0.4)" stroke-width="10" stroke-linecap="round" /><path d="${pathD}" fill="none" stroke="#6366f1" stroke-width="5" stroke-linecap="round" stroke-dasharray="16 24" class="flowing-path" style="filter: drop-shadow(0 0 8px rgba(99,102,241,0.6));"/>`;
+                    cabEl.insertBefore(svg, cabEl.firstChild);
+                }
+            }, 100); 
+        }
+
+        function renderCabinetGridFull(layerId, taskIndex) {
+            const task = state.pickingTasks[taskIndex]; if(!task) return;
+            const cab = CABINETS.find(c => c.id === task.cabinetId); if (!cab) return;
+            const layerEl = document.getElementById(`swipe-layer-${layerId}`);
+            if (layerEl) { layerEl.innerHTML = `<div class="cabinet-grid" style="grid-template-rows: repeat(${cab.rows}, 1fr); grid-template-columns: repeat(${cab.cols}, 1fr);">${generateGridHTML(cab, taskIndex)}</div>`; lucide.createIcons(); }
+        }
+
+        const toggleSidebar = () => {
+            state.sidebarOpen = !state.sidebarOpen;
+            const sidebar = document.getElementById('main-sidebar');
+            const btn = document.querySelector('button[onclick="toggleSidebar()"]');
+            if(state.sidebarOpen) { 
+                sidebar.classList.remove('sidebar-collapse'); btn.innerHTML = `<i data-lucide="x" id="sidebar-icon" class="w-5 h-5 transition-transform group-active:scale-90"></i>`;
+            } else { 
+                sidebar.classList.add('sidebar-collapse'); btn.innerHTML = `<i data-lucide="menu" id="sidebar-icon" class="w-5 h-5 transition-transform group-active:scale-90"></i>`;
+            }
+            lucide.createIcons();
+        };
+
+        const updateMapBtnIcon = () => {
+            const btn = document.getElementById('toggle-map-btn'); 
+            if (state.mainView === 'map') {
+                btn.innerHTML = `<i data-lucide="undo-2" class="w-5 h-5 group-active:scale-90 transition-transform"></i>`;
+                btn.className = "fixed top-6 right-6 z-[100] w-12 h-12 rounded-[1rem] bg-indigo-50 border border-indigo-100 shadow-inner flex items-center justify-center text-brand-600 hover:-translate-y-0.5 transition-all duration-500 ease-[cubic-bezier(0.16,1,0.3,1)] pointer-events-auto group interactive-btn";
+            } else {
+                btn.innerHTML = `<i data-lucide="map" class="w-5 h-5 group-active:scale-90 transition-transform"></i>`;
+                btn.className = "fixed top-6 right-6 z-[100] w-12 h-12 rounded-[1rem] bg-white/80 backdrop-blur-xl border border-white shadow-[0_8px_30px_-4px_rgba(0,0,0,0.05)] flex items-center justify-center text-slate-700 hover:shadow-[0_12px_40px_-8px_rgba(0,0,0,0.08)] hover:-translate-y-0.5 transition-all duration-500 ease-[cubic-bezier(0.16,1,0.3,1)] pointer-events-auto group interactive-btn";
+            }
+            lucide.createIcons();
+        };
+
+        const switchMainView = (viewName) => {
+            if (viewName === 'map') mapState.needsFocus = true; 
+            state.mainView = viewName;
+            const mapLayer = document.getElementById('view-2d-map'), pickingLayer = document.getElementById('view-3d-picking'), pipeline = document.getElementById('cabinet-pipeline');
+            
+            if (viewName === 'map') {
+                pickingLayer.classList.add('hidden'); mapLayer.style.opacity = '1'; mapLayer.style.pointerEvents = 'auto';
+                if (state.isGuiding && pipeline) pipeline.classList.add('opacity-0');
+            } else {
+                pickingLayer.classList.remove('hidden'); mapLayer.style.opacity = '0'; mapLayer.style.pointerEvents = 'none';
+                if (state.isGuiding && pipeline) pipeline.classList.remove('opacity-0');
+                setTimeout(() => { window.dispatchEvent(new Event('resize')); adjustCabinetWallPosition(); jumpHologramPosition(); }, 100);
+            }
+            renderMap(); updateMapBtnIcon();
+        };
+
+        const toggleMainView = () => switchMainView(state.mainView === 'map' ? 'cabinet' : 'map');
+
+        const renderSidebar = () => {
+            const container = document.getElementById('task-list-container'); if(!container || !state.pickingTasks.length) return;
+            let html = '';
+            state.pickingTasks.forEach((t, idx) => {
+                const isA = state.isGuiding && idx === state.currentTaskIndex, isD = state.isGuiding && idx < state.currentTaskIndex;
+                const bC = isA ? "bg-white shadow-[0_10px_30px_-5px_rgba(99,102,241,0.15)] border border-brand-200" : (isD ? "bg-transparent opacity-40 border border-transparent" : "bg-white/40 border border-white shadow-sm");
+                const nC = isA ? "bg-gradient-to-br from-brand-400 to-brand-600 shadow-[0_8px_16px_-4px_rgba(99,102,241,0.5),inset_0_1px_1px_rgba(255,255,255,0.4)] text-white" : (isD ? "bg-slate-200 text-slate-400" : "bg-white shadow-sm border border-slate-100 text-slate-500");
+                html += `<div ${isA ? 'id="active-task-item"' : ''} class="flex items-center gap-4 p-3.5 rounded-[1.2rem] transition-all duration-500 ease-out ${bC}"><div class="w-7 h-7 rounded-xl flex items-center justify-center text-[11px] font-black shrink-0 ${nC}">${isD?'<i data-lucide="check" class="w-4 h-4"></i>':idx+1}</div><div class="flex-1 min-w-0"><div class="text-[13px] font-bold text-slate-800 truncate tracking-tight">${t.partName}</div></div><div class="font-mono text-[14px] font-black text-slate-700">x${t.quantity}</div></div>`;
+            });
+            container.innerHTML = html;
+        };
+
+        const renderCabinetPipeline = () => {
+            const container = document.getElementById('cabinet-pipeline'); if (!container) return;
+            if (!state.isGuiding || !state.pickingTasks.length) { container.classList.add('opacity-0'); setTimeout(()=>container.classList.add('hidden'), 500); return; }
+            
+            container.classList.remove('hidden'); if (state.mainView === 'cabinet') container.classList.remove('opacity-0'); else container.classList.add('opacity-0');
+            
+            const p = []; state.pickingTasks.forEach(t => { if(!p.length || p[p.length-1].id !== t.cabinetId) p.push({id: t.cabinetId, name: t.displayCab}); });
+            let curIdx = p.findIndex(item => item.id === state.pickingTasks[state.currentTaskIndex]?.cabinetId); if(curIdx === -1) curIdx = 0;
+
+            let html = '';
+            p.forEach((item, idx) => {
+                const c = idx === curIdx ? "bg-gradient-to-b from-brand-500 to-brand-600 text-white shadow-[0_8px_20px_-4px_rgba(99,102,241,0.5),inset_0_1px_1px_rgba(255,255,255,0.3)] transform scale-110 z-10 border border-brand-400" : (idx < curIdx ? "bg-emerald-50 text-emerald-600 shadow-sm border border-emerald-100" : "bg-white/80 backdrop-blur-md text-slate-500 shadow-sm border border-white");
+                html += `<div class="px-5 py-2 rounded-full text-[11px] font-black tracking-wider transition-all duration-500 ease-out ${c} whitespace-nowrap">${item.name}</div>`;
+                if(idx < p.length - 1) html += `<div class="w-6 h-[2px] ${idx<curIdx?'bg-emerald-300':(idx===curIdx?'bg-brand-300':'bg-white')} rounded-full shrink-0 shadow-sm"></div>`;
+            });
+            container.innerHTML = html; setTimeout(() => container.querySelector('.scale-110')?.scrollIntoView({ inline: 'center', behavior: 'smooth' }), 50);
+        };
+
+        const updateUI = (direction = 'up') => {
+            renderMap(); renderSidebar(); renderCabinetPipeline();
+            
+            if (state.pickingTasks.length > 0 && state.currentTaskIndex >= 0) {
+                const task = state.pickingTasks[state.currentTaskIndex];
+                document.getElementById('sidebar-progress-bar').style.width = `${Math.round(((state.currentTaskIndex + 1) / state.pickingTasks.length) * 100)}%`;
+                document.getElementById('sidebar-progress-text').innerText = `${state.currentTaskIndex + 1} / ${state.pickingTasks.length}`;
+                
+                const isShortage = task.quantity < task.originalQuantity;
+                if (viewer3D.currentPart !== task.partName) { viewer3D.currentPart = task.partName; render3DPreviewAsync(task.partName, task.quantity, isShortage, direction); } 
+                else { update3DQuantity(task.quantity, isShortage); }
+            }
+            lucide.createIcons(); if (state.mainView === 'cabinet') setTimeout(adjustCabinetWallPosition, 50);
+        };
+
+        const adjustQuantity = (delta) => { if (!state.isGuiding || !state.pickingTasks.length) return; state.pickingTasks[state.currentTaskIndex].quantity = Math.max(0, state.pickingTasks[state.currentTaskIndex].quantity + delta); updateUI('none'); };
+        const reportShortage = () => { if (!state.isGuiding || !state.pickingTasks.length) return; state.pickingTasks[state.currentTaskIndex].quantity = 0; state.pickingTasks[state.currentTaskIndex].isShortage = true; updateUI('none'); setTimeout(nextGuidanceStep, 600); };
+
+        const showJobLog = () => {
+            state.isGuiding = false; let totItems = 0, totShort = 0, html = '';
+            state.pickingTasks.forEach(t => {
+                const isS = t.quantity < t.originalQuantity; if(isS) totShort++; totItems++;
+                html += `<tr class="hover:bg-slate-100/50 transition-colors group"><td class="py-4 px-5 text-[13px] font-bold text-slate-800 max-w-[120px] sm:max-w-[200px] truncate">${t.partName}</td><td class="py-4 px-5 text-xs font-mono font-bold text-slate-500 hidden sm:table-cell">${t.displayCab} / ${t.row}-${t.col}</td><td class="py-4 px-5 text-center"><span class="text-sm font-black ${isS?'text-red-500':'text-slate-900'}">${t.quantity}</span> <span class="text-[10px] text-slate-400">/</span> <span class="text-xs font-bold text-slate-400">${t.originalQuantity}</span></td><td class="py-4 px-5 text-center">${isS?'<div class="inline-flex items-center gap-1.5 px-3 py-1.5 bg-red-50 border border-red-100 text-red-600 rounded-lg text-[10px] font-black uppercase tracking-widest"><i data-lucide="alert-circle" class="w-3 h-3"></i> 缺件</div>':'<div class="inline-flex items-center gap-1.5 px-3 py-1.5 bg-emerald-50 border border-emerald-100 text-emerald-600 rounded-lg text-[10px] font-black uppercase tracking-widest"><i data-lucide="check" class="w-3 h-3"></i> 正常</div>'}</td></tr>`;
+            });
+            document.getElementById('log-table-body').innerHTML = html; document.getElementById('log-summary-text').innerText = `已处理 ${totItems} 项颗粒资产 · 发现 ${totShort} 项缺件异常`;
+            document.getElementById('view-3d-picking').classList.add('hidden');
+            const pipeline = document.getElementById('cabinet-pipeline'); if (pipeline) pipeline.classList.add('hidden');
+            switchMainView('map'); document.getElementById('map-container').classList.add('blur-lg');
+            
+            const overlay = document.getElementById('job-log-overlay'), modal = document.getElementById('job-log-modal');
+            overlay.classList.remove('hidden'); setTimeout(() => { overlay.classList.remove('opacity-0'); modal.classList.remove('scale-95'); lucide.createIcons(); }, 50);
+        };
+
+        const exportLogToExcel = () => {
+            if (typeof XLSX === 'undefined') { showToast("导出引擎未就绪", true); return; }
+            const wsData = [["颗粒名称", "柜组", "网格", "目标量", "实际取出", "状态"]];
+            state.pickingTasks.forEach(t => wsData.push([t.partName, t.displayCab, `'${t.row}-${t.col}`, t.originalQuantity, t.quantity, t.quantity < t.originalQuantity ? '⚠️ 缺件' : '✅ 正常']));
+            const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(wsData), "日志");
+            XLSX.writeFile(wb, `作业日志_${new Date().toISOString().slice(0,10).replace(/-/g,'')}.xlsx`);
+        };
+
+        const closeLogAndReset = () => {
+            const o = document.getElementById('job-log-overlay'), m = document.getElementById('job-log-modal');
+            o.classList.add('opacity-0'); m.classList.add('scale-95');
+            setTimeout(() => {
+                o.classList.add('hidden'); document.getElementById('map-container').classList.remove('blur-lg');
+                state.pickingTasks = []; state.currentTaskIndex = -1; state.isGuiding = false; viewer3D.currentPart = null;
+                document.getElementById('start-job-overlay').classList.add('hidden'); document.getElementById('empty-state-overlay').classList.remove('hidden');
+                switchMainView('map'); updateUI('none');
+            }, 500);
+        };
+
+        const startGuidance = () => { 
+            if(state.pickingTasks.length){ 
+                state.pickingTasks.sort((a,b)=>{const [tA,nA]=a.cabinetId.split('-'),[tB,nB]=b.cabinetId.split('-'); if(tA!==tB)return tA==='S'?-1:1; return parseInt(nA)-parseInt(nB);});
+                state.isGuiding = true; state.jobStartTime = new Date(); 
+                switchMainView('cabinet'); goToTask(0);
+                setTimeout(()=>document.getElementById('task-list-container').scrollTo({top:0,behavior:'smooth'}), 100); 
+            } 
+        };
+
+        const goToTask = (targetIndex) => {
+            if (state.isAnimating || targetIndex === state.currentTaskIndex || targetIndex < 0) return;
+            if (targetIndex >= state.pickingTasks.length) { showJobLog(); return; }
+
+            const nextT = state.pickingTasks[targetIndex]; if (!nextT) return;
+            const isSameCab = state.currentCabinetId === nextT.cabinetId, dir = targetIndex > state.currentTaskIndex ? 'up' : 'down';
+            state.isAnimating = true; state.currentTaskIndex = targetIndex; state.currentCabinetId = nextT.cabinetId; 
+            
+            updateUI(dir);
+
+            if (isSameCab) {
+                const cabEl = document.getElementById('swipe-layer-current')?.querySelector('.cabinet-grid');
+                if(cabEl) { cabEl.innerHTML = generateGridHTML(CABINETS.find(c=>c.id===nextT.cabinetId), targetIndex); renderNavPath('current', targetIndex); lucide.createIcons(); }
+                setTimeout(()=>document.getElementById('task-list-container').querySelector('#active-task-item')?.scrollIntoView({behavior:'smooth',block:'center'}), 100);
+                state.isAnimating = false;
+            } else {
+                const curL = document.getElementById('swipe-layer-current'), nexL = document.getElementById('swipe-layer-next');
+                renderCabinetGridFull('next', targetIndex); nexL.classList.remove('hidden');
+                
+                curL.style.transition = 'transform 0.5s cubic-bezier(0.55, 0.085, 0.68, 0.53), opacity 0.5s ease-in';
+                curL.style.transform = dir === 'up' ? 'translateY(-60%)' : 'translateY(60%)'; curL.style.opacity = '0';
+                nexL.style.transition = 'none'; nexL.style.transform = dir === 'up' ? 'translateY(60%)' : 'translateY(-60%)'; nexL.style.opacity = '0';
+                
+                setTimeout(() => {
+                    nexL.style.transition = 'transform 0.7s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.7s ease-out';
+                    nexL.style.transform = 'translateY(0)'; nexL.style.opacity = '1';
+                    
+                    setTimeout(() => {
+                        curL.style.transition = 'none'; curL.innerHTML = nexL.innerHTML; curL.style.transform = 'translateY(0)'; curL.style.opacity = '1';
+                        nexL.classList.add('hidden');
+                        document.getElementById('task-list-container').querySelector('#active-task-item')?.scrollIntoView({behavior:'smooth',block:'center'});
+                        state.isAnimating = false; renderNavPath('current', state.currentTaskIndex);
+                    }, 700); 
+                }, 450); 
+            }
+        };
+
+        const nextGuidanceStep = () => goToTask(state.currentTaskIndex + 1);
+        const prevGuidanceStep = () => goToTask(state.currentTaskIndex - 1);
+
+        let wallRotX = 8, wallRotY = -18, wallOffsetY = 0; 
+        const updateWallTransform = () => { const w = document.getElementById('cabinet-wall-container'); if(w) w.style.transform = `rotateX(${wallRotX}deg) rotateY(${wallRotY}deg) translateZ(-50px) translateY(${wallOffsetY}vh)`; };
+
+        // 核心技术一：独立控制 3D 背景墙的高度过渡
+        const adjustCabinetWallPosition = () => {
+            const nextLayer = document.getElementById('swipe-layer-next');
+            const activeCell = (nextLayer && !nextLayer.classList.contains('hidden')) ? nextLayer.querySelector('.grid-cell.active') : document.querySelector('#swipe-layer-current .grid-cell.active');
+            if (!activeCell) return;
+            const cabGrid = activeCell.closest('.cabinet-grid'); if(!cabGrid) return;
+
+            const relativeY = (activeCell.offsetTop + activeCell.offsetHeight / 2) / cabGrid.offsetHeight;
+            wallOffsetY = (0.5 - relativeY) * 15; 
+            updateWallTransform();
+        };
+
+        // 核心技术二：瞬移刷新 (Instant Jump Rendering) 
+        // 瞬间将 3D 画布容器瞬移至反向的安全区域（切断过渡），让新/旧模型均实现绝对笔直的上下飞入飞出
+        const jumpHologramPosition = () => {
+            const nextLayer = document.getElementById('swipe-layer-next');
+            const activeCell = (nextLayer && !nextLayer.classList.contains('hidden')) ? nextLayer.querySelector('.grid-cell.active') : document.querySelector('#swipe-layer-current .grid-cell.active');
+            if (!activeCell) return;
+            const cabGrid = activeCell.closest('.cabinet-grid'); if(!cabGrid) return;
+
+            const relativeX = (activeCell.offsetLeft + activeCell.offsetWidth / 2) / cabGrid.offsetWidth;
+            const holoEl = document.getElementById('layer2-3d-hologram');
+            if (!holoEl) return;
+            
+            const viewW = window.innerWidth;
+            const targetX = relativeX < 0.5 ? (viewW * 0.22) : (-viewW * 0.22);
+            
+            // 短暂剥夺过渡动画实现瞬间跃迁
+            holoEl.style.transition = 'none';
+            holoEl.style.setProperty('--ui-x', `${targetX}px`);
+            holoEl.style.setProperty('--ui-y', '0px');
+            
+            // 强制浏览器触发 Reflow 以确保瞬移被绘制
+            void holoEl.offsetWidth; 
+            
+            // 恢复过渡动画，准备下一次可能的行为
+            holoEl.style.transition = 'transform 0.6s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.4s ease-out';
+        };
+
+        const setupInteractions = () => {
+            const v = document.getElementById('view-3d-picking');
+            window.addEventListener('mousemove', e => {
+                if (state.mainView !== 'cabinet') return;
+                const rx = (e.clientX / window.innerWidth - 0.5) * 2; const ry = (e.clientY / window.innerHeight - 0.5) * 2;
+                wallRotY = -18 + rx * 15; wallRotX = 8 - ry * 10; updateWallTransform();
+            });
+
+            // 【核心修复】将 3D 模型的交互区域 (#hologram-interaction-zone) 加入滑动和滚轮的排除列表
+            const preventCheck = (e) => e.target.closest('button') || e.target.closest('#main-sidebar') || e.target.closest('#cabinet-pipeline') || e.target.closest('#hologram-interaction-zone');
+
+            let touchStartY = 0, touchStartX = 0;
+            v.addEventListener('touchstart', e => { touchStartY = e.touches[0].clientY; touchStartX = e.touches[0].clientX; }, {passive: true});
+            v.addEventListener('touchend', e => {
+                if(state.mainView !== 'cabinet' || preventCheck(e)) return; 
+                const dy = touchStartY - e.changedTouches[0].clientY; const dx = Math.abs(touchStartX - e.changedTouches[0].clientX);
+                if (Math.abs(dy) > 70 && Math.abs(dy) > dx) { if(dy>0) nextGuidanceStep(); else prevGuidanceStep(); }
+            }, {passive: true});
+        };
+
+        let wheelTimeout;
+        const handleWheel = (e) => { 
+            if(state.mainView === 'cabinet' && !state.isAnimating) { 
+                // 【核心修复】如果鼠标正停在按钮、侧边栏、或是 3D 模型交互区上，则不触发任务切换，交由 OrbitControls 处理缩放
+                if(e.target.closest('button') || e.target.closest('#main-sidebar') || e.target.closest('#cabinet-pipeline') || e.target.closest('#hologram-interaction-zone')) return;
+                
+                if (window.wheelTimeout) clearTimeout(window.wheelTimeout); 
+                window.wheelTimeout = setTimeout(() => { if(e.deltaY>0) nextGuidanceStep(); else prevGuidanceStep(); }, 60); 
+            } 
+        };
+
+        window.addEventListener('WMSDepsLoaded', () => {
+            init3DPartViewer(); setupInteractions(); renderMap(); lucide.createIcons();
+            const tweenUpdate = (time) => { requestAnimationFrame(tweenUpdate); if (typeof TWEEN !== 'undefined') TWEEN.update(time); };
+            tweenUpdate();
+        });
+    </script>
+</body>
+</html>
