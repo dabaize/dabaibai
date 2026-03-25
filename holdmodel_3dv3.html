@@ -564,67 +564,63 @@
         const render3DPreviewAsync = async (partName, initialQty, isShortage, direction = 'up') => {
             if (!partName) return;
             
-            // 确保 3D 场景已成功初始化
             if (!viewer3D.scene) init3DPartViewer();
             if (!viewer3D.scene) return;
 
-            // 【动画防冲突】模型动画期间禁用交互
-            if (viewer3D.controls) viewer3D.controls.enabled = false;
-            
             const session = ++viewer3D.currentSession;
             const loaderUi = document.getElementById('model-loader-ui');
 
-            // ==== 1. 立即响应滑动指令，隔离动画与加载逻辑 ====
-            // 瞬间生成新容器和 3D 文字，避免因为加载模型卡住用户的视觉反馈
-            const newWrapper = new THREE.Group(); newWrapper.isTaskWrapper = true; 
+            // 1. 【极致流畅优化】如果有旧模型，立刻让它飞走并销毁，提供瞬间的切页反馈
+            if (viewer3D.activeWrapper) {
+                const oldWrapper = viewer3D.activeWrapper;
+                viewer3D.activeWrapper = null; // 立即剥离控制权，防止疯狂滑动时重复捕捉
+                if (viewer3D.controls) viewer3D.controls.enabled = false;
+                
+                const flyDist = 25;
+                const targetY = direction === 'up' ? flyDist : -flyDist;
+                new TWEEN.Tween(oldWrapper.position).to({ y: targetY }, 300).easing(TWEEN.Easing.Cubic.In).start();
+                new TWEEN.Tween(oldWrapper.scale).to({ x: 0.1, y: 0.1, z: 0.1 }, 300).easing(TWEEN.Easing.Cubic.In).onComplete(() => {
+                    viewer3D.scene.remove(oldWrapper); 
+                    disposeThreeHierarchy(oldWrapper); // 彻底释放显存
+                }).start();
+            }
+
+            // 2. 【核心修复：终极防抖】
+            // 挂起 250ms。如果用户在疯狂连续滑动，此处的 session 会发生变化，直接被 return 截断。
+            // 绝不会去执行极其耗费性能的 Canvas 贴图生成和材质渲染，彻底释放移动端主线程！
+            await new Promise(resolve => setTimeout(resolve, 250));
+            if (session !== viewer3D.currentSession) return;
+
+            // 3. 250ms 内用户没有继续滑动，说明手指停在了这个任务上，正式开始渲染
+            loaderUi.classList.remove('hidden');
+
+            const newWrapper = new THREE.Group(); 
+            newWrapper.isTaskWrapper = true; 
             let physicalModel = new THREE.Group();
             physicalModel.scale.setScalar(2.6); 
             newWrapper.add(physicalModel);
 
             const label3D = createVolumetricText(`${partName}  x  ${initialQty}`, isShortage);
-            label3D.position.y = 1.5; // 先设定一个安全高度
+            label3D.position.y = 1.5; 
             newWrapper.add(label3D); 
             viewer3D.labelGroup = label3D;
-
-            const oldWrapper = viewer3D.activeWrapper; 
-            viewer3D.activeWrapper = newWrapper; 
-            const flyDist = 25; 
             
-            // 定义新模型（仅文字和空壳）的入场动画
-            const animateInNew = () => {
-                jumpHologramPosition();
-                viewer3D.scene.add(newWrapper);
-                newWrapper.position.y = direction === 'up' ? -flyDist : flyDist; 
-                newWrapper.scale.set(0.1, 0.1, 0.1);
-                new TWEEN.Tween(newWrapper.position).to({ y: 0 }, 600).easing(TWEEN.Easing.Back.Out).start();
-                new TWEEN.Tween(newWrapper.scale).to({ x: 1, y: 1, z: 1 }, 600).easing(TWEEN.Easing.Back.Out).onComplete(() => {
-                    if (viewer3D.controls) viewer3D.controls.enabled = true;
-                }).start();
-            };
+            viewer3D.activeWrapper = newWrapper;
 
-            // 立即执行旧模型退场 & 新模型空壳入场，绝不阻塞主线程
-            if (oldWrapper) {
-                const targetY = direction === 'up' ? flyDist : -flyDist;
-                new TWEEN.Tween(oldWrapper.position).to({ y: targetY }, 400).easing(TWEEN.Easing.Cubic.In).start();
-                new TWEEN.Tween(oldWrapper.scale).to({ x: 0.1, y: 0.1, z: 0.1 }, 400).easing(TWEEN.Easing.Cubic.In).onComplete(() => {
-                    viewer3D.scene.remove(oldWrapper); 
-                    disposeThreeHierarchy(oldWrapper); 
-                    animateInNew();
-                }).start();
-            } else {
-                setTimeout(jumpHologramPosition, 50); 
-                animateInNew();
-            }
-
-            // ==== 2. 【核心修复】防抖机制 (Debounce) ====
-            // 等待 350ms，避免用户高速滑动时重复加载模型，导致解析器堵塞主线程
-            loaderUi.classList.remove('hidden');
-            await new Promise(resolve => setTimeout(resolve, 350));
+            // 瞬间跳跃到不遮挡的屏幕位置
+            jumpHologramPosition();
             
-            // 如果 350ms 内用户又滑动了，Session 发生变化，静默抛弃本次加载任务！
-            if (session !== viewer3D.currentSession) return;
+            // 空壳入场动画
+            const flyDist = 25;
+            viewer3D.scene.add(newWrapper);
+            newWrapper.position.y = direction === 'up' ? -flyDist : flyDist; 
+            newWrapper.scale.set(0.1, 0.1, 0.1);
+            new TWEEN.Tween(newWrapper.position).to({ y: 0 }, 500).easing(TWEEN.Easing.Back.Out).start();
+            new TWEEN.Tween(newWrapper.scale).to({ x: 1, y: 1, z: 1 }, 500).easing(TWEEN.Easing.Back.Out).onComplete(() => {
+                if (viewer3D.controls) viewer3D.controls.enabled = true;
+            }).start();
 
-            // ==== 3. 异步下载和重型解析 (此时主线程即使卡顿，UI 滑动也已结束) ====
+            // 4. 异步下载 3D 物理模型
             if (!window.GlobalModelCache[partName]) {
                 const uuid = await fetchCloudModelId(partName);
                 if (session !== viewer3D.currentSession) return;
@@ -637,7 +633,6 @@
                 }
             }
 
-            // 二次核验防断流
             if (session !== viewer3D.currentSession) return;
 
             let loadedMesh = null;
@@ -651,15 +646,12 @@
                 loadedMesh = new THREE.Mesh(geo, mat); 
             }
             
-            // ==== 4. 将完成加载的模型优雅放入空壳中弹出 ====
             physicalModel.add(loadedMesh);
             const box = new THREE.Box3().setFromObject(loadedMesh); 
             let maxY = 1.0; if (box.max.y !== Infinity && box.max.y !== -Infinity) maxY = box.max.y;
 
-            // 动态校准并升起 3D 文字的高度
             new TWEEN.Tween(label3D.position).to({ y: maxY + 1.8 }, 400).easing(TWEEN.Easing.Cubic.Out).start();
 
-            // 模型缩放弹出视觉效果
             loadedMesh.scale.setScalar(0.01);
             new TWEEN.Tween(loadedMesh.scale).to({ x: 1, y: 1, z: 1 }, 600).easing(TWEEN.Easing.Elastic.Out).start();
 
@@ -961,6 +953,16 @@
             if(state.pickingTasks.length){ 
                 state.pickingTasks.sort((a,b)=>{const [tA,nA]=a.cabinetId.split('-'),[tB,nB]=b.cabinetId.split('-'); if(tA!==tB)return tA==='S'?-1:1; return parseInt(nA)-parseInt(nB);});
                 state.isGuiding = true; state.jobStartTime = new Date(); 
+                
+                // 【新增】请求设备方向权限，用于实现手机晃动产生背景视差
+                if (typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function') {
+                    DeviceOrientationEvent.requestPermission().then(permissionState => {
+                        if (permissionState === 'granted') window.addEventListener('deviceorientation', handleDeviceOrientation);
+                    }).catch(console.error);
+                } else {
+                    window.addEventListener('deviceorientation', handleDeviceOrientation);
+                }
+
                 switchMainView('cabinet'); goToTask(0);
                 setTimeout(()=>document.getElementById('task-list-container').scrollTo({top:0,behavior:'smooth'}), 100); 
             } 
@@ -1007,7 +1009,32 @@
         const prevGuidanceStep = () => goToTask(state.currentTaskIndex - 1);
 
         let wallRotX = 8, wallRotY = -18, wallOffsetY = 0; 
+        let initialBeta = null; // 记录初始握持手机的倾斜角
+        
         const updateWallTransform = () => { const w = document.getElementById('cabinet-wall-container'); if(w) w.style.transform = `rotateX(${wallRotX}deg) rotateY(${wallRotY}deg) translateZ(-50px) translateY(${wallOffsetY}vh)`; };
+
+        // 【新增】陀螺仪事件处理器：根据手机重力感应晃动背景柜子
+        const handleDeviceOrientation = (e) => {
+            if (state.mainView !== 'cabinet' || !e.gamma || !e.beta) return;
+            
+            let gamma = e.gamma; 
+            let beta = e.beta;   
+            
+            if (initialBeta === null) initialBeta = beta;
+            
+            gamma = Math.max(-40, Math.min(40, gamma));
+            let betaDiff = beta - initialBeta;
+            if (betaDiff > 180) betaDiff -= 360; else if (betaDiff < -180) betaDiff += 360;
+            betaDiff = Math.max(-40, Math.min(40, betaDiff));
+            
+            const rx = gamma / 40;
+            const ry = betaDiff / 40;
+            
+            // 晃动幅度放大，结合 CSS Transition 产生极致的漂浮视差
+            wallRotY = -18 + rx * 25; 
+            wallRotX = 8 - ry * 15; 
+            updateWallTransform();
+        };
 
         // 修复2：独立控制 3D 背景墙的高度过渡（扩大手机端漫游范围，确保任意高低格子居中呈现）
         const adjustCabinetWallPosition = () => {
@@ -1019,7 +1046,9 @@
             const relativeY = (activeCell.offsetTop + activeCell.offsetHeight / 2) / cabGrid.offsetHeight;
             // 手机端扩大 panRange 至 130 甚至更大，使得柜子可以大范围平移
             const panRange = window.innerWidth < 768 ? 130 : 60; 
-            wallOffsetY = (0.5 - relativeY) * panRange; 
+            // 【优化】修复手机上聚焦整体太过偏下的问题，施加基础向上偏移(-18vh)，大幅上提视觉重心
+            const baseOffset = window.innerWidth < 768 ? -18 : 0; 
+            wallOffsetY = (0.5 - relativeY) * panRange + baseOffset; 
             updateWallTransform();
         };
 
