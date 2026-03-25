@@ -267,9 +267,9 @@
                 </div>
             </div>
 
-            <!-- 移动端限制全息交互区大小，避免误触 -->
+            <!-- 修复3: 缩小并严格限制全息交互区大小，避免误触并释放周围滑动空间 -->
             <div id="layer2-3d-hologram" class="absolute inset-0 z-30 pointer-events-none flex items-center justify-center overflow-hidden dynamic-ui">
-                <div id="hologram-interaction-zone" class="absolute w-[70vw] max-w-[500px] h-[70vw] max-h-[500px] z-40 pointer-events-auto cursor-grab active:cursor-grabbing rounded-full"></div>
+                <div id="hologram-interaction-zone" class="absolute w-[45vw] max-w-[300px] h-[45vw] max-h-[300px] z-40 pointer-events-auto cursor-grab active:cursor-grabbing rounded-full"></div>
                 <div id="part-3d-viewer" class="w-full h-full pointer-events-none"></div>
             </div>
 
@@ -336,7 +336,7 @@
     </div>
 
     <script>
-        // 通用 Toast 提示函数 (替代系统原生 alert，符合最高设计准则)
+        // 通用 Toast 提示函数
         const showToast = (msg, isError = false) => {
             const t = document.createElement('div');
             t.className = `fixed top-10 left-1/2 -translate-x-1/2 px-6 py-3.5 rounded-full font-bold text-[13px] shadow-[0_15px_40px_rgba(0,0,0,0.08)] z-[9999] transition-all duration-500 transform translate-y-[-30px] opacity-0 flex items-center gap-2.5 backdrop-blur-xl ${isError ? 'bg-red-50/90 text-red-600 border border-red-200/50' : 'bg-white/90 text-slate-700 border border-slate-200/50'}`;
@@ -363,6 +363,28 @@
 
         window.GlobalModelCache = {}; 
         window.GlobalModelIdCache = {}; 
+
+        // 修复1：严格的三维内存释放机制，避免因持续创建材质和几何体导致移动端崩溃
+        const disposeThreeHierarchy = (node) => {
+            if (!node) return;
+            while(node.children.length > 0) {
+                const child = node.children[0];
+                disposeThreeHierarchy(child);
+                node.remove(child);
+            }
+            if (node.geometry && node.geometry.isUnique) node.geometry.dispose();
+            if (node.material && node.material.isUnique) {
+                if (Array.isArray(node.material)) {
+                    node.material.forEach(m => {
+                        if (m.map && m.map.isUnique) m.map.dispose();
+                        m.dispose();
+                    });
+                } else {
+                    if (node.material.map && node.material.map.isUnique) node.material.map.dispose();
+                    node.material.dispose();
+                }
+            }
+        };
 
         const formatCabinetId = (id) => id.replace('S-', '小柜').replace('L-', '大柜');
 
@@ -496,13 +518,15 @@
             const animate = () => {
                 requestAnimationFrame(animate); 
                 if (viewer3D.controls && viewer3D.controls.enabled) viewer3D.controls.update();
-                viewer3D.scene.children.forEach(child => { if (child.isTaskWrapper) child.rotation.y += 0.004; });
-                if (state.mainView === 'cabinet') viewer3D.renderer.render(viewer3D.scene, viewer3D.camera);
+                if (viewer3D.scene) {
+                    viewer3D.scene.children.forEach(child => { if (child.isTaskWrapper) child.rotation.y += 0.004; });
+                    if (state.mainView === 'cabinet') viewer3D.renderer.render(viewer3D.scene, viewer3D.camera);
+                }
             };
             animate();
 
             new ResizeObserver(() => {
-                if (container.clientWidth > 0 && container.clientHeight > 0) {
+                if (container.clientWidth > 0 && container.clientHeight > 0 && viewer3D.camera) {
                     viewer3D.camera.aspect = container.clientWidth / container.clientHeight;
                     viewer3D.camera.updateProjectionMatrix(); viewer3D.renderer.setSize(container.clientWidth, container.clientHeight);
                 }
@@ -522,8 +546,14 @@
             ctx.fillStyle = gradient; ctx.fillText(text, canvas.width/2, 128);
 
             const tex = new THREE.CanvasTexture(canvas); tex.anisotropy = 16; tex.minFilter = THREE.LinearMipmapLinearFilter; tex.magFilter = THREE.LinearFilter;
+            tex.isUnique = true; // 标记唯一性，允许安全释放显存
+
             const mat = new THREE.MeshStandardMaterial({ map: tex, transparent: true, alphaTest: 0.1, side: THREE.FrontSide, roughness: 0.2, metalness: 0.1 });
-            const geo = new THREE.PlaneGeometry(8.5, 1.81); const group = new THREE.Group();
+            mat.isUnique = true;
+            
+            const geo = new THREE.PlaneGeometry(8.5, 1.81); 
+            geo.isUnique = true;
+            const group = new THREE.Group();
             
             const layers = 15; const depth = 0.015;
             for(let i = 0; i < layers; i++) { const mesh = new THREE.Mesh(geo, mat); mesh.position.z = (i - layers/2) * depth; group.add(mesh); }
@@ -534,11 +564,9 @@
         const render3DPreviewAsync = async (partName, initialQty, isShortage, direction = 'up') => {
             if (!partName) return;
             
-            // 确保 3D 场景已成功初始化 (修复 Cannot read properties of null (reading 'add') 报错)
             if (!viewer3D.scene) init3DPartViewer();
             if (!viewer3D.scene) return;
 
-            // 【动画防冲突】模型动画期间禁用交互
             if (viewer3D.controls) viewer3D.controls.enabled = false;
             
             const session = ++viewer3D.currentSession;
@@ -560,7 +588,13 @@
             }
 
             if (window.GlobalModelCache[partName]) physicalModel.add(window.GlobalModelCache[partName].clone());
-            else { const mat = new THREE.MeshStandardMaterial({ color: 0xe2e8f0, metalness: 0.1, roughness: 0.2 }); physicalModel.add(new THREE.Mesh(new THREE.BoxGeometry(2, 1.2, 1), mat)); }
+            else { 
+                const mat = new THREE.MeshStandardMaterial({ color: 0xe2e8f0, metalness: 0.1, roughness: 0.2 }); 
+                mat.isUnique = true;
+                const geo = new THREE.BoxGeometry(2, 1.2, 1);
+                geo.isUnique = true;
+                physicalModel.add(new THREE.Mesh(geo, mat)); 
+            }
             
             physicalModel.scale.setScalar(2.6); newWrapper.add(physicalModel);
             const box = new THREE.Box3().setFromObject(physicalModel); let maxY = 1.0; if (box.max.y !== Infinity && box.max.y !== -Infinity) maxY = box.max.y;
@@ -576,6 +610,8 @@
                 new TWEEN.Tween(oldWrapper.position).to({ y: targetY }, 400).easing(TWEEN.Easing.Cubic.In).start();
                 new TWEEN.Tween(oldWrapper.scale).to({ x: 0.1, y: 0.1, z: 0.1 }, 400).easing(TWEEN.Easing.Cubic.In).onComplete(() => {
                     viewer3D.scene.remove(oldWrapper); 
+                    disposeThreeHierarchy(oldWrapper); // 清除并销毁被替换的资源，解决内存泄漏
+                    
                     jumpHologramPosition();
                     viewer3D.scene.add(newWrapper);
                     newWrapper.position.y = direction === 'up' ? -flyDist : flyDist; newWrapper.scale.set(0.1, 0.1, 0.1);
@@ -597,7 +633,10 @@
             if (viewer3D.activeWrapper && viewer3D.labelGroup) {
                 const currentY = viewer3D.labelGroup.position.y;
                 const newLabel3D = createVolumetricText(`${viewer3D.currentPart}  x  ${qty}`, isShortage); newLabel3D.position.y = currentY;
-                viewer3D.activeWrapper.remove(viewer3D.labelGroup); viewer3D.activeWrapper.add(newLabel3D); viewer3D.labelGroup = newLabel3D;
+                const oldLabel = viewer3D.labelGroup;
+                viewer3D.activeWrapper.remove(oldLabel); 
+                disposeThreeHierarchy(oldLabel); // 清除并销毁被替换的旧文字材质资源
+                viewer3D.activeWrapper.add(newLabel3D); viewer3D.labelGroup = newLabel3D;
                 newLabel3D.scale.setScalar(0.6); new TWEEN.Tween(newLabel3D.scale).to({ x: 1, y: 1, z: 1 }, 600).easing(TWEEN.Easing.Elastic.Out).start();
             }
         };
@@ -931,7 +970,7 @@
         let wallRotX = 8, wallRotY = -18, wallOffsetY = 0; 
         const updateWallTransform = () => { const w = document.getElementById('cabinet-wall-container'); if(w) w.style.transform = `rotateX(${wallRotX}deg) rotateY(${wallRotY}deg) translateZ(-50px) translateY(${wallOffsetY}vh)`; };
 
-        // 独立控制 3D 背景墙的高度过渡
+        // 修复2：独立控制 3D 背景墙的高度过渡（扩大手机端漫游范围，确保任意高低格子居中呈现）
         const adjustCabinetWallPosition = () => {
             const nextLayer = document.getElementById('swipe-layer-next');
             const activeCell = (nextLayer && !nextLayer.classList.contains('hidden')) ? nextLayer.querySelector('.grid-cell.active') : document.querySelector('#swipe-layer-current .grid-cell.active');
@@ -939,11 +978,13 @@
             const cabGrid = activeCell.closest('.cabinet-grid'); if(!cabGrid) return;
 
             const relativeY = (activeCell.offsetTop + activeCell.offsetHeight / 2) / cabGrid.offsetHeight;
-            wallOffsetY = (0.5 - relativeY) * 15; 
+            // 手机端扩大 panRange 至 130 甚至更大，使得柜子可以大范围平移
+            const panRange = window.innerWidth < 768 ? 130 : 60; 
+            wallOffsetY = (0.5 - relativeY) * panRange; 
             updateWallTransform();
         };
 
-        // 移动端视差规避优化：根据横竖屏动态切换规避模式，防止模型越出屏幕
+        // 修复3：缩小并强制避让3D全息交互区，为屏幕滑屏手势彻底让路
         const jumpHologramPosition = () => {
             const nextLayer = document.getElementById('swipe-layer-next');
             const activeCell = (nextLayer && !nextLayer.classList.contains('hidden')) ? nextLayer.querySelector('.grid-cell.active') : document.querySelector('#swipe-layer-current .grid-cell.active');
@@ -962,12 +1003,14 @@
             let targetY = 0;
             
             if (isMobile) {
-                // 移动端减小横向偏移量，同时加入轻微上下偏移避开拇指遮挡区
+                // 移动端：大幅缩小模型(scale:0.55)，并在 Y 轴上深度避让作业网格，防止遮挡手势滑动
                 targetX = relativeX < 0.5 ? (viewW * 0.15) : (-viewW * 0.15);
-                targetY = relativeY < 0.5 ? 40 : -40;
+                targetY = relativeY < 0.5 ? (window.innerHeight * 0.28) : (-window.innerHeight * 0.28);
+                holoEl.style.setProperty('--anim-scale', '0.55');
             } else {
                 targetX = relativeX < 0.5 ? (viewW * 0.22) : (-viewW * 0.22);
                 targetY = 0;
+                holoEl.style.setProperty('--anim-scale', '1');
             }
             
             holoEl.style.transition = 'none';
@@ -993,8 +1036,13 @@
             v.addEventListener('touchstart', e => { touchStartY = e.touches[0].clientY; touchStartX = e.touches[0].clientX; }, {passive: true});
             v.addEventListener('touchend', e => {
                 if(state.mainView !== 'cabinet' || preventCheck(e)) return; 
-                const dy = touchStartY - e.changedTouches[0].clientY; const dx = Math.abs(touchStartX - e.changedTouches[0].clientX);
-                if (Math.abs(dy) > 70 && Math.abs(dy) > dx) { if(dy>0) nextGuidanceStep(); else prevGuidanceStep(); }
+                const dy = touchStartY - e.changedTouches[0].clientY; 
+                const dx = Math.abs(touchStartX - e.changedTouches[0].clientX);
+                if (Math.abs(dy) > 70 && Math.abs(dy) > dx) { 
+                    // 修复4：完全反转上下滑动逻辑，根据用户习惯，现更改为 "手指往上划 = 返回上一步"
+                    if(dy > 0) prevGuidanceStep(); 
+                    else nextGuidanceStep(); 
+                }
             }, {passive: true});
         };
 
