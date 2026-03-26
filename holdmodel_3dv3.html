@@ -183,11 +183,6 @@
         .interactive-btn:active {
             transform: scale(0.92) translateY(2px);
         }
-        
-        #hologram-interaction-zone {
-            /* 解决痛点②：移除了 pointer-events: none !important，恢复模型交互 */
-            touch-action: none; 
-        }
     </style>
 </head>
 <body class="h-[100dvh] w-screen flex relative select-none">
@@ -262,15 +257,30 @@
             </div>
 
             <!-- 开始作业的大按钮浮层 -->
-            <div id="start-job-overlay" class="absolute bottom-10 sm:bottom-16 left-1/2 transform -translate-x-1/2 z-50 hidden pointer-events-auto w-[90%] sm:w-auto flex justify-center">
-                <button onclick="startGuidance()" class="w-full sm:w-auto bg-slate-900 text-white px-10 py-4.5 sm:px-16 sm:py-5 rounded-[2rem] text-base sm:text-lg font-black tracking-tight shadow-[0_20px_40px_-10px_rgba(0,0,0,0.3),inset_0_1px_1px_rgba(255,255,255,0.2)] hover:shadow-[0_30px_60px_-15px_rgba(0,0,0,0.4)] hover:-translate-y-1.5 active:scale-[0.96] transition-all duration-500 ease-[cubic-bezier(0.16,1,0.3,1)] flex items-center justify-center gap-3">
+            <div id="start-job-overlay" class="absolute inset-x-0 bottom-8 sm:bottom-12 z-50 hidden pointer-events-auto flex flex-col items-center justify-end gap-4 px-4">
+                
+                <!-- 新增：3D 模型预加载控制面板 -->
+                <div id="preload-panel" class="w-full max-w-[90%] sm:max-w-md bg-white/80 backdrop-blur-3xl shadow-[0_20px_60px_-15px_rgba(0,0,0,0.1),inset_0_1px_1px_rgba(255,255,255,1)] border border-white/60 rounded-[1.5rem] p-5 flex flex-col gap-4 transform translate-y-4 opacity-0 transition-all duration-700 ease-[cubic-bezier(0.16,1,0.3,1)] delay-100">
+                    <div class="flex justify-between items-center px-1">
+                        <span class="text-[11px] font-bold text-slate-500 uppercase tracking-widest flex items-center gap-1.5"><i data-lucide="box" class="w-3.5 h-3.5"></i> 空间资产缓存</span>
+                        <span id="preload-status-text" class="text-xs font-mono font-black text-brand-600">0 / 0</span>
+                    </div>
+                    <div class="w-full bg-slate-200/50 rounded-full h-2.5 overflow-hidden border border-white/50 shadow-inner">
+                        <div id="preload-progress-bar" class="bg-gradient-to-r from-brand-400 to-brand-600 h-full w-0 transition-all duration-300 ease-out shadow-[0_0_10px_rgba(99,102,241,0.5)]"></div>
+                    </div>
+                    <button id="btn-preload" onclick="startPreload()" class="w-full bg-indigo-50 text-brand-600 py-3.5 rounded-[1rem] font-bold text-sm hover:bg-indigo-100 hover:-translate-y-0.5 active:scale-[0.98] transition-all flex items-center justify-center gap-2 border border-indigo-100">
+                        <i data-lucide="cloud-download" class="w-4 h-4"></i> 开始预加载所有模型，拒绝卡顿
+                    </button>
+                </div>
+
+                <button onclick="startGuidance()" class="w-full max-w-[90%] sm:max-w-md bg-slate-900 text-white py-4.5 sm:py-5 rounded-[2rem] text-base sm:text-lg font-black tracking-tight shadow-[0_20px_40px_-10px_rgba(0,0,0,0.3),inset_0_1px_1px_rgba(255,255,255,0.2)] hover:shadow-[0_30px_60px_-15px_rgba(0,0,0,0.4)] hover:-translate-y-1.5 active:scale-[0.96] transition-all duration-500 ease-[cubic-bezier(0.16,1,0.3,1)] flex items-center justify-center gap-3">
                     <i data-lucide="rocket" class="w-5 h-5"></i> 启动空间作业
                 </button>
             </div>
         </div>
 
         <!-- 3D 拣货实景层 -->
-        <div id="view-3d-picking" class="absolute inset-0 z-20 hidden" onwheel="handleWheel(event)">
+        <div id="view-3d-picking" class="absolute inset-0 z-20 hidden">
             <div id="layer1-bg-wall" class="absolute inset-0 z-10 pointer-events-none">
                 <div id="cabinet-wall-container">
                     <div id="cabinet-view" class="swipe-container">
@@ -280,10 +290,9 @@
                 </div>
             </div>
 
+            <!-- 将 interaction-zone 的限制彻底移除，解放全局 3D 操作 -->
             <div id="layer2-3d-hologram" class="absolute inset-0 z-30 pointer-events-none flex items-center justify-center overflow-hidden dynamic-ui">
-                <!-- 解决痛点②与③：扩展交互热区范围，防止大模型超出热区导致误触滑屏 -->
-                <div id="hologram-interaction-zone" class="absolute w-[85vw] max-w-[450px] h-[75vw] max-h-[450px] z-40 pointer-events-auto cursor-grab active:cursor-grabbing rounded-[2rem]"></div>
-                <div id="part-3d-viewer" class="w-full h-full pointer-events-none"></div>
+                <div id="part-3d-viewer" class="w-full h-full pointer-events-auto cursor-grab active:cursor-grabbing"></div>
             </div>
 
             <div class="absolute inset-0 z-50 pointer-events-none">
@@ -461,13 +470,61 @@
                 if (newTasks.length > 0) {
                     state.pickingTasks = newTasks;
                     document.getElementById('empty-state-overlay').classList.add('hidden');
-                    document.getElementById('start-job-overlay').classList.remove('hidden');
+                    
+                    const startOverlay = document.getElementById('start-job-overlay');
+                    startOverlay.classList.remove('hidden');
+                    // 触发展示动画
+                    setTimeout(() => {
+                        document.getElementById('preload-panel').classList.remove('translate-y-4', 'opacity-0');
+                    }, 50);
+
                     updateUI('up');
-                    batchFetchCloudModelIds([...new Set(newTasks.map(t => t.partName))]);
+                    document.getElementById('preload-status-text').innerText = `0 / ${[...new Set(newTasks.map(t => t.partName))].length}`;
                 } else showToast("未在文件中找到有效的位置数据，请检查格式！", true);
                 document.getElementById('excel-upload').value = '';
             };
             reader.readAsArrayBuffer(file);
+        };
+
+        // 新增：极客感十足的后台静默预加载逻辑
+        const startPreload = async () => {
+            const btn = document.getElementById('btn-preload');
+            btn.disabled = true;
+            btn.innerHTML = `<i data-lucide="loader-2" class="w-4 h-4 animate-spin"></i> 模型数据建立中...`;
+            btn.classList.replace('hover:-translate-y-0.5', 'opacity-80');
+            lucide.createIcons();
+
+            const uniqueParts = [...new Set(state.pickingTasks.map(t => t.partName))];
+            const total = uniqueParts.length;
+            let loaded = 0;
+            
+            // 并发拉取 UUID 以提高速度
+            await batchFetchCloudModelIds(uniqueParts);
+
+            for (const partName of uniqueParts) {
+                if (!window.GlobalModelCache[partName]) {
+                    const uuid = await fetchCloudModelId(partName);
+                    if (uuid) {
+                        const CDN = 'https://a.unity.cn/client_api/v1/buckets/181aa46a-4b2b-41d9-9765-38454415dee3/content/简模/';
+                        let raw = null;
+                        try { raw = await loadModelAsset(`${CDN}${uuid}.obj`, 'obj'); } 
+                        catch(e1) { try { raw = await loadModelAsset(`${CDN}${uuid}.fbx`, 'fbx'); } catch(e2) {} }
+                        
+                        if (raw) window.GlobalModelCache[partName] = processRawModel(raw, partName);
+                    }
+                }
+                loaded++;
+                document.getElementById('preload-progress-bar').style.width = `${(loaded / total) * 100}%`;
+                document.getElementById('preload-status-text').innerText = `${loaded} / ${total}`;
+            }
+
+            btn.innerHTML = `<i data-lucide="check" class="w-4 h-4"></i> 资产加载就绪`;
+            btn.classList.replace('bg-indigo-50', 'bg-emerald-50');
+            btn.classList.replace('text-brand-600', 'text-emerald-600');
+            btn.classList.replace('border-indigo-100', 'border-emerald-100');
+            lucide.createIcons();
+            
+            showToast("所有模型已预先缓存，作业过程将获得极致顺滑体验！");
         };
 
         const batchFetchCloudModelIds = async (partNames) => {
@@ -491,7 +548,7 @@
 
         const loadModelAsset = (url, type) => new Promise((resolve, reject) => new (type === 'obj' ? THREE.OBJLoader : THREE.FBXLoader)().load(url, resolve, undefined, reject));
 
-        // 解决痛点③：严格约束 3D 模型大小与强制几何体居中，彻底防止过度放大
+        // 解决痛点：重构模型缩放算法，采用非线性动态靶向缩放，拒绝“小零件变巨无霸”
         const processRawModel = (rawModel, partName) => {
             const baseColors = [0x6366f1, 0x10b981, 0xf43f5e, 0xf59e0b, 0x8b5cf6, 0x0ea5e9];
             let hash = 0; for (let j = 0; j < partName.length; j++) hash = partName.charCodeAt(j) + ((hash << 5) - hash);
@@ -499,7 +556,6 @@
             rawModel.traverse(child => { if (child.isMesh) child.material = customMat; });
             const box = new THREE.Box3().setFromObject(rawModel);
             
-            // 确保模型自身的原点居中，防止严重偏离坐标系导致超出视野
             const center = box.getCenter(new THREE.Vector3());
             rawModel.position.sub(center);
 
@@ -508,8 +564,22 @@
             
             const size = box.getSize(new THREE.Vector3()); 
             const maxDim = Math.max(size.x, size.y, size.z);
-            // 强制标准化最大尺寸为稳定的 4.0 个单位
-            if (maxDim > 0) wrapper.scale.setScalar(4.0 / maxDim);
+            
+            // 【核心修复】：根据模型原始尺寸，动态分配目标大小，保留相对尺寸感
+            if (maxDim > 0) {
+                let targetSize;
+                if (maxDim > 10.0) {
+                    // 超大件：严格压缩，防溢出屏幕（如长条铁轨/大机箱）
+                    targetSize = 2.5; 
+                } else if (maxDim < 0.2) {
+                    // 极小件：适度放大保证可见度，但不超过 0.8，保留它的“娇小感”
+                    targetSize = 0.8; 
+                } else {
+                    // 适中件：使用开方曲线平滑过渡，让不同模型的视觉比例更加自然
+                    targetSize = Math.sqrt(maxDim) * 1.2; 
+                }
+                wrapper.scale.setScalar(targetSize / maxDim);
+            }
             return wrapper;
         };
 
@@ -533,8 +603,8 @@
             viewer3D.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
             container.appendChild(viewer3D.renderer.domElement);
             
-            const interactZone = document.getElementById('hologram-interaction-zone');
-            viewer3D.controls = new THREE.OrbitControls(viewer3D.camera, interactZone);
+            // 将 OrbitControls 直接绑定在全局容器上，释放全局交互
+            viewer3D.controls = new THREE.OrbitControls(viewer3D.camera, viewer3D.renderer.domElement);
             viewer3D.controls.enableDamping = true; viewer3D.controls.dampingFactor = 0.05;
             
             // 解决痛点③：限制 OrbitControls 缩放范围，防止用户因无限放大而导致模型超出交互区
@@ -959,7 +1029,19 @@
             setTimeout(() => {
                 o.classList.add('hidden'); document.getElementById('map-container').classList.remove('blur-lg');
                 state.pickingTasks = []; state.currentTaskIndex = -1; state.isGuiding = false; viewer3D.currentPart = null;
-                document.getElementById('start-job-overlay').classList.add('hidden'); document.getElementById('empty-state-overlay').classList.remove('hidden');
+                document.getElementById('start-job-overlay').classList.add('hidden'); 
+                document.getElementById('preload-panel').classList.add('translate-y-4', 'opacity-0');
+                
+                // 重置预加载按钮状态
+                const btn = document.getElementById('btn-preload');
+                btn.disabled = false;
+                btn.classList.remove('opacity-80', 'bg-emerald-50', 'text-emerald-600', 'border-emerald-100');
+                btn.classList.add('bg-indigo-50', 'text-brand-600', 'border-indigo-100', 'hover:-translate-y-0.5');
+                btn.innerHTML = `<i data-lucide="cloud-download" class="w-4 h-4"></i> 开始预加载所有模型，拒绝卡顿`;
+                
+                document.getElementById('preload-progress-bar').style.width = '0%';
+                
+                document.getElementById('empty-state-overlay').classList.remove('hidden');
                 switchMainView('map'); updateUI('none');
             }, 500);
         };
@@ -1108,14 +1190,22 @@
 
             const preventCheck = (e) => e.target.closest('button') || e.target.closest('#main-sidebar') || e.target.closest('#cabinet-pipeline');
 
-            let touchStartY = 0, touchStartX = 0;
-            v.addEventListener('touchstart', e => { touchStartY = e.touches[0].clientY; touchStartX = e.touches[0].clientX; }, {passive: true});
+            let touchStartY = 0, touchStartX = 0, touchStartTime = 0;
+            v.addEventListener('touchstart', e => { 
+                touchStartY = e.touches[0].clientY; 
+                touchStartX = e.touches[0].clientX; 
+                touchStartTime = Date.now();
+            }, {passive: true});
+            
             v.addEventListener('touchend', e => {
-                // 解决痛点②：如果触摸发生在了 3D 模型交互区，则中止全局滑屏事件，保证模型可被缩放和旋转
-                if(state.mainView !== 'cabinet' || preventCheck(e) || e.target.closest('#hologram-interaction-zone')) return; 
+                if(state.mainView !== 'cabinet' || preventCheck(e)) return; 
                 const dy = touchStartY - e.changedTouches[0].clientY; 
                 const dx = Math.abs(touchStartX - e.changedTouches[0].clientX);
-                if (Math.abs(dy) > 70 && Math.abs(dy) > dx) { 
+                const dt = Date.now() - touchStartTime;
+
+                // 完美解决冲突：时间极短 (dt < 400ms) 且重垂直位移 (dy > dx * 1.5 且 > 60px) 的纯粹滑动，判定为切换任务手势
+                // 这能完美屏蔽我们在慢悠悠地 3D 旋转模型时产生的轻微位移导致误翻页
+                if (dt < 400 && Math.abs(dy) > 60 && Math.abs(dy) > dx * 1.5) { 
                     if(dy > 0) prevGuidanceStep(); 
                     else nextGuidanceStep(); 
                 }
