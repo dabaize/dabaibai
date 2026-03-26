@@ -81,11 +81,10 @@
 
         /* 3D 柜体容器 */
         #cabinet-wall-container {
-            width: 120vw; height: 120vh;
-            position: absolute; left: -10vw; top: -10vh; 
-            transform-style: preserve-3d;
-            transform: rotateX(8deg) rotateY(-18deg) translateZ(-50px) translateY(0vh);
-            will-change: transform; /* 性能优化：启用 GPU 硬件加速层 */
+           will-change: transform;
+    backface-visibility: hidden;
+    -webkit-backface-visibility: hidden;
+    transform: translateZ(0); /* 强制 GPU 层 */
         }
 
         .cabinet-grid { 
@@ -1105,132 +1104,122 @@
 
         let initialBeta = null; 
 
-        const handleDeviceOrientation = (e) => {
-            if (state.mainView !== 'cabinet' || !e.gamma || !e.beta) return;
-            
-            let gamma = e.gamma; 
-            let beta = e.beta;   
-            
-            if (initialBeta === null) initialBeta = beta;
-            
-            gamma = Math.max(-60, Math.min(60, gamma));
-            let betaDiff = beta - initialBeta;
-            if (betaDiff > 180) betaDiff -= 360; else if (betaDiff < -180) betaDiff += 360;
-            betaDiff = Math.max(-60, Math.min(60, betaDiff));
-            
-            const rx = gamma / 25;
-            const ry = betaDiff / 25;
-            
-            const rawY = -18 + rx * 45; 
-            const rawX = 8 - ry * 35; 
-            
-            targetWallRotY = Math.max(-40, Math.min(4, rawY)); 
-            targetWallRotX = Math.max(-10, Math.min(26, rawX)); 
-        };
+        let lastGyroTime = 0;
+const GYRO_THROTTLE = 16; // 约 60fps
 
-        const adjustCabinetWallPosition = () => {
-            const nextLayer = document.getElementById('swipe-layer-next');
-            const activeCell = (nextLayer && !nextLayer.classList.contains('hidden')) ? nextLayer.querySelector('.grid-cell.active') : document.querySelector('#swipe-layer-current .grid-cell.active');
-            if (!activeCell) return;
-            const cabGrid = activeCell.closest('.cabinet-grid'); if(!cabGrid) return;
+const handleDeviceOrientation = (e) => {
+    if (state.mainView !== 'cabinet' || !e.gamma || !e.beta) return;
 
-            const relativeX = (activeCell.offsetLeft + activeCell.offsetWidth / 2) / cabGrid.offsetWidth;
-            const relativeY = (activeCell.offsetTop + activeCell.offsetHeight / 2) / cabGrid.offsetHeight;
-            const isMobile = window.innerWidth < 768;
-            
-            // Y 轴平移算法
-            const panRangeY = isMobile ? 130 : 60; 
-            const baseOffsetY = isMobile ? -10 : 0; 
-            targetWallOffsetY = (0.5 - relativeY) * panRangeY + baseOffsetY; 
-            
-            // X 轴平移算法：强制补偿，让不在中间的格子也被推到视野正中心区
-            const panRangeX = isMobile ? 120 : 40; 
-            targetWallOffsetX = (0.5 - relativeX) * panRangeX; 
-        };
+    const now = Date.now();
+    if (now - lastGyroTime < GYRO_THROTTLE) return;
+    lastGyroTime = now;
 
-        const jumpHologramPosition = () => {
-            const nextLayer = document.getElementById('swipe-layer-next');
-            const activeCell = (nextLayer && !nextLayer.classList.contains('hidden')) ? nextLayer.querySelector('.grid-cell.active') : document.querySelector('#swipe-layer-current .grid-cell.active');
-            if (!activeCell) return;
-            const cabGrid = activeCell.closest('.cabinet-grid'); if(!cabGrid) return;
+    let gamma = Math.max(-60, Math.min(60, e.gamma));
+    let beta = e.beta;
 
-            const relativeX = (activeCell.offsetLeft + activeCell.offsetWidth / 2) / cabGrid.offsetWidth;
-            const relativeY = (activeCell.offsetTop + activeCell.offsetHeight / 2) / cabGrid.offsetHeight;
-            const holoEl = document.getElementById('layer2-3d-hologram');
-            if (!holoEl) return;
-            
-            const viewW = window.innerWidth;
-            const isMobile = viewW < 768;
-            
-            let targetX = 0;
-            let targetY = 0;
-            
-            if (isMobile) {
-                targetX = relativeX < 0.5 ? (viewW * 0.15) : (-viewW * 0.15);
-                targetY = relativeY < 0.5 ? (window.innerHeight * 0.28) : (-window.innerHeight * 0.28);
-                holoEl.style.setProperty('--anim-scale', '0.55');
-            } else {
-                targetX = relativeX < 0.5 ? (viewW * 0.22) : (-viewW * 0.22);
-                targetY = 0;
-                holoEl.style.setProperty('--anim-scale', '1');
-            }
-            
-            holoEl.style.transition = 'none';
-            holoEl.style.setProperty('--ui-x', `${targetX}px`);
-            holoEl.style.setProperty('--ui-y', `${targetY}px`);
-            
-            void holoEl.offsetWidth; 
-            
-            holoEl.style.transition = 'transform 0.6s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.4s ease-out';
-        };
+    if (initialBeta === null) initialBeta = beta;
 
-        const setupInteractions = () => {
-            const view3D = document.getElementById('view-3d-picking');
-            
-            window.addEventListener('mousemove', e => {
-                if (state.mainView !== 'cabinet') return;
-                const rx = (e.clientX / window.innerWidth - 0.5) * 2; 
-                const ry = (e.clientY / window.innerHeight - 0.5) * 2;
-                
-                targetWallRotY = Math.max(-35, Math.min(0, -18 + rx * 25));
-                targetWallRotX = Math.max(-5, Math.min(25, 8 - ry * 20)); 
-            });
+    let betaDiff = beta - initialBeta;
+    if (betaDiff > 180) betaDiff -= 360;
+    else if (betaDiff < -180) betaDiff += 360;
+    betaDiff = Math.max(-60, Math.min(60, betaDiff));
 
-            const preventCheck = (e) => e.target.closest('button') || e.target.closest('#main-sidebar') || e.target.closest('#cabinet-pipeline');
+    // 更平滑的映射 + 增加阻尼
+    targetWallRotY = -18 + (gamma / 22) * 48;
+    targetWallRotX = 8 - (betaDiff / 22) * 38;
 
-            let touchStartY = 0, touchStartX = 0, touchStartTime = 0;
-            let isTouchingModelZone = false;
-            
-            view3D.addEventListener('touchstart', e => { 
-                touchStartY = e.touches[0].clientY; 
-                touchStartX = e.touches[0].clientX; 
-                touchStartTime = Date.now();
-                
-                // 核心修复：纯 JS 几何碰撞检测，完美免疫一切 DOM 透明层叠带来的触摸丢失 Bug
-                const visualRing = document.getElementById('visual-holo-ring');
-                if (visualRing) {
-                    const rect = visualRing.getBoundingClientRect();
-                    const centerX = rect.left + rect.width / 2;
-                    const centerY = rect.top + rect.height / 2;
-                    
-                    // 将交互热区物理半径扩大 1.8 倍，极大地提升选中 3D 模型的容错率
-                    const radius = (rect.width / 2) * 1.8;
-                    
-                    const distSq = Math.pow(touchStartX - centerX, 2) + Math.pow(touchStartY - centerY, 2);
-                    
-                    if (distSq <= radius * radius) {
-                        // 在光环内：开启 3D 旋转控制
-                        isTouchingModelZone = true;
-                        if(viewer3D.controls) viewer3D.controls.enabled = true;
-                    } else {
-                        // 在光环外：临时剥夺 3D 旋转控制权，防止空白处的误触旋转
-                        isTouchingModelZone = false;
-                        if(viewer3D.controls) viewer3D.controls.enabled = false;
-                    }
-                } else {
-                    isTouchingModelZone = false;
-                }
-            }, {passive: true});
+    // 限制最终角度范围，防止过度翻转
+    targetWallRotY = Math.max(-42, Math.min(6, targetWallRotY));
+    targetWallRotX = Math.max(-12, Math.min(28, targetWallRotX));
+};
+
+     const adjustCabinetWallPosition = () => {
+    const activeCell = document.querySelector('.grid-cell.active');
+    if (!activeCell) return;
+    const cabGrid = activeCell.closest('.cabinet-grid');
+    if (!cabGrid) return;
+
+    const rect = cabGrid.getBoundingClientRect();
+    const cellRect = activeCell.getBoundingClientRect();
+
+    // 计算高亮格子在整个柜子网格中的**相对中心位置**
+    const relX = (cellRect.left + cellRect.width / 2 - rect.left) / rect.width;
+    const relY = (cellRect.top + cellRect.height / 2 - rect.top) / rect.height;
+
+    const isMobile = window.innerWidth < 768;
+
+    // ==== 强制居中算法（关键修复）====
+    const targetOffsetX = (0.5 - relX) * (isMobile ? 180 : 90);   // 更大补偿
+    const targetOffsetY = (0.5 - relY) * (isMobile ? 220 : 110);   // 垂直方向更激进
+
+    targetWallOffsetX = targetOffsetX;
+    targetWallOffsetY = targetOffsetY;
+};
+
+const jumpHologramPosition = () => {
+    const activeCell = document.querySelector('.grid-cell.active');
+    if (!activeCell) return;
+    const cabGrid = activeCell.closest('.cabinet-grid');
+    if (!cabGrid) return;
+
+    const rect = cabGrid.getBoundingClientRect();
+    const cellRect = activeCell.getBoundingClientRect();
+
+    const relX = (cellRect.left + cellRect.width / 2 - rect.left) / rect.width;
+    const relY = (cellRect.top + cellRect.height / 2 - rect.top) / rect.height;
+
+    const holoEl = document.getElementById('layer2-3d-hologram');
+    if (!holoEl) return;
+
+    const isMobile = window.innerWidth < 768;
+    const viewW = window.innerWidth;
+    const viewH = window.innerHeight;
+
+    // 3D 模型也强制跟随高亮格子居中
+    const targetX = (0.5 - relX) * (isMobile ? viewW * 0.75 : viewW * 0.45);
+    const targetY = (0.5 - relY) * (isMobile ? viewH * 0.45 : 0);
+
+    holoEl.style.transition = 'none';
+    holoEl.style.setProperty('--ui-x', `${targetX}px`);
+    holoEl.style.setProperty('--ui-y', `${targetY}px`);
+    holoEl.style.setProperty('--anim-scale', isMobile ? '0.65' : '1');
+
+    // 触发重绘
+    void holoEl.offsetWidth;
+    holoEl.style.transition = 'transform 0.6s cubic-bezier(0.16, 1, 0.3, 1)';
+};
+      const setupInteractions = () => {
+    const view3D = document.getElementById('view-3d-picking');
+    if (!view3D) return;
+
+    // 彻底放开 3D 模型交互区（不再依赖小光环）
+    view3D.addEventListener('touchstart', (e) => {
+        if (state.mainView !== 'cabinet') return;
+        // 只要在 3D 视图内，就强制启用 OrbitControls
+        if (viewer3D.controls) viewer3D.controls.enabled = true;
+    }, { passive: true });
+
+    view3D.addEventListener('touchend', (e) => {
+        if (state.mainView !== 'cabinet') return;
+
+        const dy = (e.changedTouches[0].clientY - (e.touches?.[0]?.clientY || e.changedTouches[0].clientY)) || 0;
+        const dx = Math.abs(e.changedTouches[0].clientX - (e.touches?.[0]?.clientX || 0));
+        const dt = Date.now() - (window.lastTouchStartTime || 0);
+
+        // 上下滑动翻页（保留原有翻页逻辑）
+        if (dt < 500 && Math.abs(dy) > 80 && Math.abs(dy) > dx * 1.6) {
+            if (dy > 0) prevGuidanceStep();
+            else nextGuidanceStep();
+        }
+    }, { passive: true });
+
+    // 确保 Canvas 本身能接收所有事件
+    const canvasObserver = new MutationObserver(() => {
+        const canvas = viewer3D.renderer?.domElement;
+        if (canvas) canvas.style.pointerEvents = 'auto';
+    });
+    canvasObserver.observe(document.getElementById('part-3d-viewer'), { childList: true });
+};
             
             view3D.addEventListener('touchend', e => {
                 // 恢复 3D 引擎的控制权
