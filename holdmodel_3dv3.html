@@ -82,16 +82,14 @@
             width: 120vw; height: 120vh;
             position: absolute; left: -10vw; top: -10vh; 
             transform-style: preserve-3d;
-            /* 性能修复：彻底移除 CSS transition，改用 JS 底层 requestAnimationFrame 硬件插值，防止浏览器队列卡死 */
             transform: rotateX(8deg) rotateY(-18deg) translateZ(-50px) translateY(0vh);
         }
 
-        /* 响应式网格布局，适配移动端内边距与间距 */
         .cabinet-grid { 
             display: grid; 
             gap: clamp(8px, 2.5vw, 18px); 
             width: 100%; height: 100%; 
-            padding: 12vh 6vw 15vh; /* 移动端减小两侧 padding */
+            padding: 12vh 6vw 15vh; 
             transform-style: preserve-3d; position: relative;
             align-content: center;
         }
@@ -99,25 +97,32 @@
             .cabinet-grid { padding: 15vh 12vw 15vh; }
         }
         
+        /* 修复闪烁：移除不稳定的 backface-visibility，增加 will-change */
         .grid-cell {
             background: rgba(255, 255, 255, 0.5); 
             backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px);
             border-radius: clamp(8px, 2vw, 16px); 
             display: flex; align-items: center; justify-content: center;
             font-family: 'JetBrains Mono', monospace; 
-            font-size: clamp(12px, 3.5vw, 15px); /* 响应式字体 */
+            font-size: clamp(12px, 3.5vw, 15px); 
             font-weight: 700; color: #94a3b8;
             box-shadow: 0 10px 30px -10px rgba(0, 0, 0, 0.05), inset 0 1px 0 rgba(255, 255, 255, 0.8);
             border: 1px solid rgba(255, 255, 255, 0.6);
             transition: all 0.6s cubic-bezier(0.16, 1, 0.3, 1);
             position: relative; z-index: 2; 
-            backface-visibility: hidden;
+            transform: translateZ(0); 
+            will-change: transform;
         }
         
         .grid-cell.picked {
             background: rgba(255, 255, 255, 0.2); color: transparent;
             box-shadow: inset 0 2px 4px rgba(0,0,0,0.02);
             border: 1px dashed rgba(148, 163, 184, 0.4); opacity: 0.6; z-index: 1;
+        }
+        
+        /* 修复闪烁：为已完成状态的浮层赋予微小的 Z 偏置 */
+        .grid-cell.picked > div.absolute {
+            transform: translateZ(1px);
         }
 
         .drawer-box {
@@ -127,9 +132,9 @@
             will-change: transform;
         }
         .grid-cell.active { background: transparent; box-shadow: none; border-color: transparent; z-index: 50; }
-        /* 移动端减小抽屉拉出的 Z 轴深度 */
         .grid-cell.active .drawer-box { transform: translateZ(clamp(60px, 15vw, 100px)); opacity: 1; }
         
+        /* 修复闪烁：移除 backface-visibility，明确 translateZ 优先度 */
         .drawer-front {
             position: absolute; inset: 0; 
             background: linear-gradient(135deg, #6366f1, #4f46e5); color: white;
@@ -137,12 +142,11 @@
             display: flex; align-items: center; justify-content: center;
             font-size: clamp(18px, 6vw, 28px); font-weight: 900; 
             box-shadow: inset 0 1px 1px rgba(255,255,255,0.4), 0 20px 40px -10px rgba(99,102,241,0.6);
-            transform: translateZ(0); backface-visibility: hidden;
+            transform: translateZ(2px);
             border: 1px solid rgba(255,255,255,0.1);
         }
         .drawer-top, .drawer-bottom, .drawer-left, .drawer-right { position: absolute; background: #4338ca; }
         
-        /* 动态缩放抽屉物理厚度 */
         .drawer-top { top: 0; left: 8px; right: 8px; height: clamp(60px, 15vw, 100px); transform-origin: top; transform: rotateX(-90deg); background: linear-gradient(to bottom, #4f46e5, #4338ca); border-radius: 8px 8px 0 0;}
         .drawer-bottom { bottom: 0; left: 8px; right: 8px; height: clamp(60px, 15vw, 100px); transform-origin: bottom; transform: rotateX(90deg); background: #312e81; box-shadow: 0 40px 60px -10px rgba(0,0,0,0.5); }
         .drawer-left { top: 8px; bottom: 8px; left: 0; width: clamp(60px, 15vw, 100px); transform-origin: left; transform: rotateY(90deg); }
@@ -175,32 +179,31 @@
         .interactive-btn:active {
             transform: scale(0.92);
         }
+
+        /* 解决触控冲突：移动端彻底穿透 3D 控制区，防止阻挡上下滑动 */
+        @media (max-width: 767px) {
+            #hologram-interaction-zone {
+                pointer-events: none !important;
+            }
+        }
     </style>
 </head>
 <body class="h-[100dvh] w-screen flex relative select-none">
 
     <input type="file" id="excel-upload" accept=".xlsx, .xls, .csv" class="hidden" onchange="handleExcelUpload(event)">
 
-    <!-- Mobile Sidebar Backdrop -->
     <div id="sidebar-backdrop" onclick="toggleSidebar()" class="fixed inset-0 bg-slate-900/20 backdrop-blur-sm z-[85] hidden opacity-0 transition-opacity duration-500 lg:hidden"></div>
 
-    <!-- Top Left: Sidebar Toggle -->
     <button onclick="toggleSidebar()" class="fixed top-5 left-4 sm:top-6 sm:left-6 z-[100] w-11 h-11 sm:w-12 sm:h-12 rounded-[1rem] bg-white/80 backdrop-blur-xl shadow-[0_8px_30px_-4px_rgba(0,0,0,0.05)] border border-white flex items-center justify-center text-slate-700 hover:shadow-[0_12px_40px_-8px_rgba(0,0,0,0.08)] hover:-translate-y-1 transition-all duration-500 ease-[cubic-bezier(0.16,1,0.3,1)] pointer-events-auto group interactive-btn">
         <i data-lucide="menu" id="sidebar-icon" class="w-5 h-5 group-active:scale-90 transition-transform"></i>
     </button>
 
-    <!-- Top Right: View Toggle -->
-    <button id="toggle-map-btn" onclick="toggleMainView()" class="fixed top-5 right-4 sm:top-6 sm:right-6 z-[100] w-11 h-11 sm:w-12 sm:h-12 rounded-[1rem] bg-white/80 backdrop-blur-xl border border-white shadow-[0_8px_30px_-4px_rgba(0,0,0,0.05)] flex items-center justify-center text-slate-700 hover:shadow-[0_12px_40px_-8px_rgba(0,0,0,0.08)] hover:-translate-y-1 transition-all duration-500 ease-[cubic-bezier(0.16,1,0.3,1)] pointer-events-auto group interactive-btn">
+    <button id="toggle-map-btn" onclick="toggleMainView()" class="fixed top-5 right-4 sm:top-6 sm:right-6 z-[100] w-11 h-11 sm:w-12 sm:h-12 rounded-[1rem] bg-white/80 backdrop-blur-xl border border-white shadow-[0_8px_30px_-4px_rgba(0,0,0,0.05)] flex items-center justify-center text-slate-700 hover:shadow-[0_12px_40px_-8px_rgba(0,0,0,0.08)] hover:-translate-y-0.5 transition-all duration-500 ease-[cubic-bezier(0.16,1,0.3,1)] pointer-events-auto group interactive-btn">
         <i data-lucide="map" class="w-5 h-5 group-active:scale-90 transition-transform"></i>
     </button>
 
-    <!-- Top Pipeline -->
-    <!-- 移动端将流水线下移，避免和左右两边的菜单按钮碰撞 -->
-    <div id="cabinet-pipeline" class="fixed top-[4.5rem] sm:top-6 left-1/2 transform -translate-x-1/2 z-[80] flex items-center gap-2 max-w-[90vw] sm:max-w-[65vw] overflow-x-auto no-scrollbar py-2 px-2 opacity-0 pointer-events-none transition-all duration-500">
-        <!-- Injected via JS -->
-    </div>
+    <div id="cabinet-pipeline" class="fixed top-[4.5rem] sm:top-6 left-1/2 transform -translate-x-1/2 z-[80] flex items-center gap-2 max-w-[90vw] sm:max-w-[65vw] overflow-x-auto no-scrollbar py-2 px-2 opacity-0 pointer-events-none transition-all duration-500"></div>
 
-    <!-- Left Sidebar (Glassmorphism) -->
     <aside id="main-sidebar" class="fixed left-0 top-0 bottom-0 w-[280px] sm:w-[320px] p-5 sm:p-6 pt-20 sm:pt-24 z-[90] bg-white/60 backdrop-blur-3xl border-r border-white shadow-[20px_0_60px_-20px_rgba(0,0,0,0.05)] transition-all duration-500 ease-[cubic-bezier(0.16,1,0.3,1)] sidebar-collapse flex flex-col">
         <div class="px-2 pb-5 sm:pb-6 flex items-center gap-4 shrink-0">
             <div class="w-10 h-10 sm:w-12 sm:h-12 rounded-[1rem] sm:rounded-[1.2rem] bg-gradient-to-br from-brand-400 to-brand-600 shadow-[0_12px_24px_-6px_rgba(99,102,241,0.4),inset_0_1px_1px_rgba(255,255,255,0.4)] flex items-center justify-center text-white"><i data-lucide="layers" class="w-5 h-5 sm:w-6 sm:h-6"></i></div>
@@ -220,10 +223,7 @@
     </aside>
 
     <main class="flex-1 h-full relative z-10 flex flex-col overflow-hidden">
-        
-        <!-- View 1: 2D Topographic Map -->
         <div id="view-2d-map" class="absolute inset-0 z-50 bg-[#f5f5f7] flex flex-col items-center justify-center transition-opacity duration-500">
-            
             <div class="absolute bottom-8 right-4 sm:bottom-10 sm:right-10 z-50 flex flex-col gap-3 sm:gap-4">
                 <button onclick="window.mapFocusCurrent()" class="w-12 h-12 sm:w-14 sm:h-14 bg-white/80 backdrop-blur-xl text-slate-700 rounded-full shadow-[0_8px_30px_-4px_rgba(0,0,0,0.06)] border border-white flex items-center justify-center hover:text-brand-600 hover:-translate-y-1 transition-all duration-500 ease-out pointer-events-auto interactive-btn group" title="重新聚焦"><i data-lucide="crosshair" class="w-5 h-5 group-active:scale-90"></i></button>
                 <div class="flex flex-col bg-white/80 backdrop-blur-xl rounded-[1.2rem] sm:rounded-[1.5rem] shadow-[0_8px_30px_-4px_rgba(0,0,0,0.06)] border border-white overflow-hidden pointer-events-auto">
@@ -232,7 +232,6 @@
                     <button onclick="window.mapZoom(-1)" class="w-12 h-12 sm:w-14 sm:h-14 flex items-center justify-center text-slate-700 hover:text-brand-600 hover:bg-slate-50/50 transition-all duration-300 group interactive-btn"><i data-lucide="minus" class="w-5 h-5 group-active:scale-90"></i></button>
                 </div>
             </div>
-
             <div id="map-container" class="w-full h-full relative z-10 flex items-center justify-center"></div>
 
             <div id="empty-state-overlay" class="absolute inset-0 flex items-center justify-center z-20 backdrop-blur-xl bg-[#f5f5f7]/50 transition-all duration-500 pointer-events-auto px-4">
@@ -255,9 +254,7 @@
             </div>
         </div>
 
-        <!-- View 2: 3D Spatial Picking -->
         <div id="view-3d-picking" class="absolute inset-0 z-20 hidden" onwheel="handleWheel(event)">
-            
             <div id="layer1-bg-wall" class="absolute inset-0 z-10 pointer-events-none">
                 <div id="cabinet-wall-container">
                     <div id="cabinet-view" class="swipe-container">
@@ -267,7 +264,6 @@
                 </div>
             </div>
 
-            <!-- 修复3: 缩小并严格限制全息交互区大小，避免误触并释放周围滑动空间 -->
             <div id="layer2-3d-hologram" class="absolute inset-0 z-30 pointer-events-none flex items-center justify-center overflow-hidden dynamic-ui">
                 <div id="hologram-interaction-zone" class="absolute w-[45vw] max-w-[300px] h-[45vw] max-h-[300px] z-40 pointer-events-auto cursor-grab active:cursor-grabbing rounded-full"></div>
                 <div id="part-3d-viewer" class="w-full h-full pointer-events-none"></div>
@@ -280,9 +276,7 @@
                     </div>
                 </div>
 
-                <!-- 右下角控制区：移动端优化位置 -->
                 <div class="absolute right-4 bottom-8 sm:right-8 sm:bottom-1/4 flex flex-col items-center gap-4 sm:gap-6 pointer-events-auto">
-                    <!-- Quantity Adjusters -->
                     <button onclick="adjustQuantity(1)" class="interactive-btn group relative flex items-center justify-center w-12 h-12 sm:w-14 sm:h-14 rounded-full bg-white/80 backdrop-blur-xl shadow-[0_10px_30px_-5px_rgba(0,0,0,0.06)] border border-white text-slate-500 hover:text-brand-600 hover:-translate-y-1">
                         <i data-lucide="plus" class="w-5 h-5 transition-transform group-hover:scale-110"></i>
                     </button>
@@ -297,7 +291,6 @@
         </div>
     </main>
 
-    <!-- Job Log Modal -->
     <div id="job-log-overlay" class="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/20 backdrop-blur-md hidden opacity-0 transition-opacity duration-500 pointer-events-auto">
         <div class="bg-white/90 backdrop-blur-3xl w-[95%] sm:w-[92%] max-w-4xl max-h-[85vh] rounded-[2rem] sm:rounded-[2.5rem] shadow-[0_50px_100px_-20px_rgba(0,0,0,0.15)] border border-white flex flex-col overflow-hidden transform scale-95 transition-transform duration-700 ease-[cubic-bezier(0.16,1,0.3,1)]" id="job-log-modal">
             <div class="p-5 sm:p-8 border-b border-slate-200/50 flex justify-between items-center">
@@ -336,7 +329,6 @@
     </div>
 
     <script>
-        // 通用 Toast 提示函数
         const showToast = (msg, isError = false) => {
             const t = document.createElement('div');
             t.className = `fixed top-10 left-1/2 -translate-x-1/2 px-6 py-3.5 rounded-full font-bold text-[13px] shadow-[0_15px_40px_rgba(0,0,0,0.08)] z-[9999] transition-all duration-500 transform translate-y-[-30px] opacity-0 flex items-center gap-2.5 backdrop-blur-xl ${isError ? 'bg-red-50/90 text-red-600 border border-red-200/50' : 'bg-white/90 text-slate-700 border border-slate-200/50'}`;
@@ -351,39 +343,42 @@
         };
 
         const state = { 
-            pickingTasks: [], 
-            isGuiding: false, 
-            currentTaskIndex: -1, 
-            mainView: 'map', 
-            jobStartTime: null,
-            sidebarOpen: false,
-            isAnimating: false,
-            currentCabinetId: null
+            pickingTasks: [], isGuiding: false, currentTaskIndex: -1, mainView: 'map', 
+            jobStartTime: null, sidebarOpen: false, isAnimating: false, currentCabinetId: null
         };
 
         window.GlobalModelCache = {}; 
         window.GlobalModelIdCache = {}; 
 
-        // 修复1：严格的三维内存释放机制，避免因持续创建材质和几何体导致移动端崩溃
-        const disposeThreeHierarchy = (node) => {
-            if (!node) return;
-            while(node.children.length > 0) {
-                const child = node.children[0];
-                disposeThreeHierarchy(child);
-                node.remove(child);
-            }
-            if (node.geometry && node.geometry.isUnique) node.geometry.dispose();
-            if (node.material && node.material.isUnique) {
-                if (Array.isArray(node.material)) {
-                    node.material.forEach(m => {
-                        if (m.map && m.map.isUnique) m.map.dispose();
-                        m.dispose();
-                    });
-                } else {
-                    if (node.material.map && node.material.map.isUnique) node.material.map.dispose();
-                    node.material.dispose();
-                }
-            }
+        // 核心性能修复：内存池复用。避免在每次滑动时狂建 Canvas/Mesh 引发内存溢出卡死
+        const TextCanvas = document.createElement('canvas'); 
+        TextCanvas.width = 512; TextCanvas.height = 128; 
+        const TextCtx = TextCanvas.getContext('2d');
+        
+        let SharedTextTexture, SharedTextMat, SharedPlaneGeo, SharedBoxGeo, SharedBoxMat;
+
+        // 【错误修复】将依赖 THREE 变量的初始化延迟到库加载完成后
+        const initThreeGlobals = () => {
+            if(SharedTextTexture) return;
+            SharedTextTexture = new THREE.CanvasTexture(TextCanvas);
+            SharedTextTexture.anisotropy = 4; SharedTextTexture.minFilter = THREE.LinearFilter;
+            SharedTextMat = new THREE.MeshBasicMaterial({ map: SharedTextTexture, transparent: true, alphaTest: 0.1, side: THREE.DoubleSide });
+            SharedPlaneGeo = new THREE.PlaneGeometry(8, 2);
+            SharedBoxGeo = new THREE.BoxGeometry(2, 1.2, 1);
+            SharedBoxMat = new THREE.MeshStandardMaterial({ color: 0xe2e8f0, metalness: 0.1, roughness: 0.2 });
+        };
+
+        const updateVolumetricText = (text, isShortage) => {
+            TextCtx.clearRect(0, 0, 512, 128);
+            TextCtx.font = "900 60px 'Noto Sans SC', 'Inter', sans-serif"; 
+            TextCtx.textAlign = 'center'; TextCtx.textBaseline = 'middle';
+            TextCtx.lineWidth = 8; TextCtx.strokeStyle = '#ffffff'; 
+            TextCtx.strokeText(text, 256, 64);
+            const gradient = TextCtx.createLinearGradient(0, 20, 0, 108);
+            if (isShortage) { gradient.addColorStop(0, '#f87171'); gradient.addColorStop(1, '#dc2626'); } 
+            else { gradient.addColorStop(0, '#818cf8'); gradient.addColorStop(1, '#4f46e5'); }
+            TextCtx.fillStyle = gradient; TextCtx.fillText(text, 256, 64);
+            if(SharedTextTexture) SharedTextTexture.needsUpdate = true;
         };
 
         const formatCabinetId = (id) => id.replace('S-', '小柜').replace('L-', '大柜');
@@ -391,7 +386,6 @@
         const generateCabinets = () => {
             const cabinets = [];
             const createCab = (id, numId, type, x, y) => ({ id, displayId: (type === 'large' ? '大柜' : '小柜') + numId, type, x, y, rows: type === 'large' ? 10 : 15, cols: type === 'large' ? 3 : 5 });
-
             const rightS = [
                 { id: 20, y: 1 }, { id: 19, y: 2 }, { id: 18, y: 4 }, { id: 17, y: 5 }, { id: 16, y: 6 }, { id: 15, y: 7 },
                 { id: 14, y: 9 }, { id: 13, y: 10 }, { id: 12, y: 11 }, { id: 11, y: 12 }, { id: 10, y: 14 }, { id: 9, y: 15 }, 
@@ -399,14 +393,12 @@
                 { id: 2, y: 27 }, { id: 1, y: 28 }
             ];
             rightS.forEach(c => cabinets.push(createCab(`S-${c.id}`, `${c.id}`, 'small', 4, c.y)));
-
             for (let i = 1; i <= 10; i++) cabinets.push(createCab(`L-${i}`, `${i}`, 'large', 0, 11 - i));
             cabinets.push(createCab('S-21', '21', 'small', 0, 14));
             cabinets.push(createCab('S-22', '22', 'small', 0, 19));
             cabinets.push(createCab('S-23', '23', 'small', 0, 20));
             cabinets.push(createCab('S-24', '24', 'small', 0, 25));
             cabinets.push(createCab('S-25', '25', 'small', 0, 26));
-
             return cabinets;
         };
 
@@ -454,7 +446,7 @@
                     document.getElementById('start-job-overlay').classList.remove('hidden');
                     updateUI('up');
                     batchFetchCloudModelIds([...new Set(newTasks.map(t => t.partName))]);
-                } else showToast("未在文件中找到有效的位置数据，请检查格式 (D列小柜, F列大柜)！", true);
+                } else showToast("未在文件中找到有效的位置数据，请检查格式！", true);
                 document.getElementById('excel-upload').value = '';
             };
             reader.readAsArrayBuffer(file);
@@ -496,7 +488,6 @@
         // ================= 3D Engine =================
         const viewer3D = { scene: null, camera: null, renderer: null, controls: null, activeWrapper: null, labelGroup: null, currentSession: 0, currentPart: null };
         
-        // 硬件级平滑插值变量
         let targetWallRotX = 8, targetWallRotY = -18, targetWallOffsetY = 0; 
         let currentWallRotX = 8, currentWallRotY = -18, currentWallOffsetY = 0;
 
@@ -513,7 +504,15 @@
             
             const interactZone = document.getElementById('hologram-interaction-zone');
             viewer3D.controls = new THREE.OrbitControls(viewer3D.camera, interactZone);
-            viewer3D.controls.enableZoom = true; viewer3D.controls.enablePan = false; viewer3D.controls.enableDamping = true; viewer3D.controls.dampingFactor = 0.05;
+            viewer3D.controls.enableDamping = true; viewer3D.controls.dampingFactor = 0.05;
+            
+            // 【触控冲突修复】移动端直接禁用手动缩放和旋转，改为自动慢转，把手势彻底让给滑动切换页面
+            const isMobile = window.innerWidth < 768;
+            viewer3D.controls.enablePan = false; 
+            viewer3D.controls.enableZoom = !isMobile;
+            viewer3D.controls.enableRotate = !isMobile;
+            viewer3D.controls.autoRotate = isMobile;
+            viewer3D.controls.autoRotateSpeed = 2.0;
 
             viewer3D.scene.add(new THREE.AmbientLight(0xffffff, 0.9));
             const dir = new THREE.DirectionalLight(0xffffff, 0.6); dir.position.set(5, 10, 7); viewer3D.scene.add(dir); 
@@ -522,7 +521,6 @@
             const animate = () => {
                 requestAnimationFrame(animate); 
                 
-                // 【性能修复1】纯 JS 硬件插值，脱离 CSS 引擎，完美消化高频陀螺仪与滑动数据
                 currentWallRotX += (targetWallRotX - currentWallRotX) * 0.08;
                 currentWallRotY += (targetWallRotY - currentWallRotY) * 0.08;
                 currentWallOffsetY += (targetWallOffsetY - currentWallOffsetY) * 0.08;
@@ -532,7 +530,7 @@
 
                 if (viewer3D.controls && viewer3D.controls.enabled) viewer3D.controls.update();
                 if (viewer3D.scene) {
-                    viewer3D.scene.children.forEach(child => { if (child.isTaskWrapper) child.rotation.y += 0.004; });
+                    viewer3D.scene.children.forEach(child => { if (child.isTaskWrapper && !isMobile) child.rotation.y += 0.004; });
                     if (state.mainView === 'cabinet') viewer3D.renderer.render(viewer3D.scene, viewer3D.camera);
                 }
             };
@@ -546,91 +544,60 @@
             }).observe(container);
         }
 
-        function createVolumetricText(text, isShortage) {
-            const canvas = document.createElement('canvas'); 
-            canvas.width = 512; canvas.height = 128; // 降低移动端内存占用
-            const ctx = canvas.getContext('2d');
-            ctx.clearRect(0, 0, canvas.width, canvas.height);
-            ctx.font = "900 60px 'Noto Sans SC', 'Inter', sans-serif"; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-            
-            ctx.lineWidth = 8; ctx.strokeStyle = '#ffffff'; ctx.strokeText(text, canvas.width/2, 64);
-            
-            const gradient = ctx.createLinearGradient(0, 20, 0, 108);
-            if (isShortage) { gradient.addColorStop(0, '#f87171'); gradient.addColorStop(1, '#dc2626'); } 
-            else { gradient.addColorStop(0, '#818cf8'); gradient.addColorStop(1, '#4f46e5'); }
-            ctx.fillStyle = gradient; ctx.fillText(text, canvas.width/2, 64);
-
-            const tex = new THREE.CanvasTexture(canvas); tex.anisotropy = 4; tex.minFilter = THREE.LinearFilter;
-            tex.isUnique = true; 
-
-            // 【性能修复2】摒弃极其消耗性能的 15 层叠加，改为单层基础材质，释放 GPU 算力
-            const mat = new THREE.MeshBasicMaterial({ map: tex, transparent: true, alphaTest: 0.1, side: THREE.DoubleSide });
-            mat.isUnique = true;
-            
-            const geo = new THREE.PlaneGeometry(8, 2); 
-            geo.isUnique = true;
-            
-            const group = new THREE.Group();
-            group.add(new THREE.Mesh(geo, mat));
-            return group;
-        }
-
         const render3DPreviewAsync = async (partName, initialQty, isShortage, direction = 'up') => {
             if (!partName) return;
-            
             if (!viewer3D.scene) init3DPartViewer();
             if (!viewer3D.scene) return;
 
             const session = ++viewer3D.currentSession;
             const loaderUi = document.getElementById('model-loader-ui');
 
-            // 1. 【极致流畅优化】如果有旧模型，立刻让它飞走并销毁，提供瞬间的切页反馈
+            // 1. 旧模型干脆退场（通过公用对象池，无需 Dispose）
             if (viewer3D.activeWrapper) {
                 const oldWrapper = viewer3D.activeWrapper;
-                viewer3D.activeWrapper = null; // 立即剥离控制权，防止疯狂滑动时重复捕捉
+                viewer3D.activeWrapper = null; 
                 if (viewer3D.controls) viewer3D.controls.enabled = false;
                 
                 const flyDist = 25;
                 const targetY = direction === 'up' ? flyDist : -flyDist;
-                new TWEEN.Tween(oldWrapper.position).to({ y: targetY }, 300).easing(TWEEN.Easing.Cubic.In).start();
-                new TWEEN.Tween(oldWrapper.scale).to({ x: 0.1, y: 0.1, z: 0.1 }, 300).easing(TWEEN.Easing.Cubic.In).onComplete(() => {
+                new TWEEN.Tween(oldWrapper.position).to({ y: targetY }, 250).easing(TWEEN.Easing.Cubic.In).start();
+                new TWEEN.Tween(oldWrapper.scale).to({ x: 0.1, y: 0.1, z: 0.1 }, 250).easing(TWEEN.Easing.Cubic.In).onComplete(() => {
                     viewer3D.scene.remove(oldWrapper); 
-                    disposeThreeHierarchy(oldWrapper); // 彻底释放显存
                 }).start();
             }
 
-            // 2. 【核心修复：终极防抖】
-            // 挂起 250ms。如果用户在疯狂连续滑动，此处的 session 会发生变化，直接被 return 截断。
-            // 绝不会去执行极其耗费性能的 Canvas 贴图生成和材质渲染，彻底释放移动端主线程！
+            // 2. 终极防抖 (250ms)
             await new Promise(resolve => setTimeout(resolve, 250));
             if (session !== viewer3D.currentSession) return;
 
-            // 3. 250ms 内用户没有继续滑动，说明手指停在了这个任务上，正式开始渲染
             loaderUi.classList.remove('hidden');
+
+            // 更新全局对象池贴图
+            updateVolumetricText(`${partName}  x  ${initialQty}`, isShortage);
 
             const newWrapper = new THREE.Group(); 
             newWrapper.isTaskWrapper = true; 
+            
             let physicalModel = new THREE.Group();
             physicalModel.scale.setScalar(2.6); 
             newWrapper.add(physicalModel);
 
-            const label3D = createVolumetricText(`${partName}  x  ${initialQty}`, isShortage);
+            const label3D = new THREE.Group();
+            label3D.add(new THREE.Mesh(SharedPlaneGeo, SharedTextMat));
             label3D.position.y = 1.5; 
             newWrapper.add(label3D); 
             viewer3D.labelGroup = label3D;
             
             viewer3D.activeWrapper = newWrapper;
 
-            // 瞬间跳跃到不遮挡的屏幕位置
             jumpHologramPosition();
             
-            // 空壳入场动画
             const flyDist = 25;
             viewer3D.scene.add(newWrapper);
             newWrapper.position.y = direction === 'up' ? -flyDist : flyDist; 
             newWrapper.scale.set(0.1, 0.1, 0.1);
-            new TWEEN.Tween(newWrapper.position).to({ y: 0 }, 500).easing(TWEEN.Easing.Back.Out).start();
-            new TWEEN.Tween(newWrapper.scale).to({ x: 1, y: 1, z: 1 }, 500).easing(TWEEN.Easing.Back.Out).onComplete(() => {
+            new TWEEN.Tween(newWrapper.position).to({ y: 0 }, 400).easing(TWEEN.Easing.Back.Out).start();
+            new TWEEN.Tween(newWrapper.scale).to({ x: 1, y: 1, z: 1 }, 400).easing(TWEEN.Easing.Back.Out).onComplete(() => {
                 if (viewer3D.controls) viewer3D.controls.enabled = true;
             }).start();
 
@@ -642,7 +609,6 @@
                     const CDN = 'https://a.unity.cn/client_api/v1/buckets/181aa46a-4b2b-41d9-9765-38454415dee3/content/简模/';
                     let raw = null;
                     try { 
-                        // 【性能修复3】强制让出主线程 50ms。确保占位模型和 UI 动画已被浏览器渲染完毕，不再与后续沉重的 OBJ 解析死锁
                         await new Promise(resolve => setTimeout(resolve, 50)); 
                         raw = await loadModelAsset(`${CDN}${uuid}.obj`, 'obj'); 
                     } catch(e1) { 
@@ -662,11 +628,7 @@
             if (window.GlobalModelCache[partName]) {
                 loadedMesh = window.GlobalModelCache[partName].clone();
             } else { 
-                const mat = new THREE.MeshStandardMaterial({ color: 0xe2e8f0, metalness: 0.1, roughness: 0.2 }); 
-                mat.isUnique = true;
-                const geo = new THREE.BoxGeometry(2, 1.2, 1);
-                geo.isUnique = true;
-                loadedMesh = new THREE.Mesh(geo, mat); 
+                loadedMesh = new THREE.Mesh(SharedBoxGeo, SharedBoxMat); 
             }
             
             physicalModel.add(loadedMesh);
@@ -685,13 +647,9 @@
 
         const update3DQuantity = (qty, isShortage) => {
             if (viewer3D.activeWrapper && viewer3D.labelGroup) {
-                const currentY = viewer3D.labelGroup.position.y;
-                const newLabel3D = createVolumetricText(`${viewer3D.currentPart}  x  ${qty}`, isShortage); newLabel3D.position.y = currentY;
-                const oldLabel = viewer3D.labelGroup;
-                viewer3D.activeWrapper.remove(oldLabel); 
-                disposeThreeHierarchy(oldLabel); // 清除并销毁被替换的旧文字材质资源
-                viewer3D.activeWrapper.add(newLabel3D); viewer3D.labelGroup = newLabel3D;
-                newLabel3D.scale.setScalar(0.6); new TWEEN.Tween(newLabel3D.scale).to({ x: 1, y: 1, z: 1 }, 600).easing(TWEEN.Easing.Elastic.Out).start();
+                updateVolumetricText(`${viewer3D.currentPart}  x  ${qty}`, isShortage);
+                viewer3D.labelGroup.scale.setScalar(0.6); 
+                new TWEEN.Tween(viewer3D.labelGroup.scale).to({ x: 1, y: 1, z: 1 }, 600).easing(TWEEN.Easing.Elastic.Out).start();
             }
         };
 
@@ -777,7 +735,6 @@
                 svgEl.style.pointerEvents = 'auto'; svgEl.style.cursor = 'grab';
                 if (mapState.needsFocus) {
                     const rect = container.getBoundingClientRect(); mapState.viewBox.w = 550; mapState.viewBox.h = 550 * (rect.height / (rect.width || 1));
-                    // 移动端屏蔽侧边栏占用宽度的计算，因为移动端侧边栏是个直接遮挡屏幕的 overlay
                     const isMobile = window.innerWidth < 768;
                     const visualOffsetX = (state.sidebarOpen && !isMobile) ? (mapState.viewBox.w * 160 / (window.innerWidth || 1)) : 0;
                     mapState.viewBox.x = (hasTarget?cx:130) - mapState.viewBox.w/2 - visualOffsetX; 
@@ -977,7 +934,6 @@
                 state.pickingTasks.sort((a,b)=>{const [tA,nA]=a.cabinetId.split('-'),[tB,nB]=b.cabinetId.split('-'); if(tA!==tB)return tA==='S'?-1:1; return parseInt(nA)-parseInt(nB);});
                 state.isGuiding = true; state.jobStartTime = new Date(); 
                 
-                // 【新增】请求设备方向权限，用于实现手机晃动产生背景视差
                 if (typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function') {
                     DeviceOrientationEvent.requestPermission().then(permissionState => {
                         if (permissionState === 'granted') window.addEventListener('deviceorientation', handleDeviceOrientation);
@@ -1031,9 +987,8 @@
         const nextGuidanceStep = () => goToTask(state.currentTaskIndex + 1);
         const prevGuidanceStep = () => goToTask(state.currentTaskIndex - 1);
 
-        let initialBeta = null; // 记录初始握持手机的倾斜角
+        let initialBeta = null; 
 
-        // 【新增】陀螺仪事件处理器：根据手机重力感应晃动背景柜子
         const handleDeviceOrientation = (e) => {
             if (state.mainView !== 'cabinet' || !e.gamma || !e.beta) return;
             
@@ -1050,12 +1005,10 @@
             const rx = gamma / 40;
             const ry = betaDiff / 40;
             
-            // 直接更新目标值，通过硬件循环插值过渡
             targetWallRotY = -18 + rx * 25; 
             targetWallRotX = 8 - ry * 15; 
         };
 
-        // 独立控制 3D 背景墙的高度过渡
         const adjustCabinetWallPosition = () => {
             const nextLayer = document.getElementById('swipe-layer-next');
             const activeCell = (nextLayer && !nextLayer.classList.contains('hidden')) ? nextLayer.querySelector('.grid-cell.active') : document.querySelector('#swipe-layer-current .grid-cell.active');
@@ -1066,11 +1019,9 @@
             const panRange = window.innerWidth < 768 ? 130 : 60; 
             const baseOffset = window.innerWidth < 768 ? -18 : 0; 
             
-            // 更新插值目标值
             targetWallOffsetY = (0.5 - relativeY) * panRange + baseOffset; 
         };
 
-        // 缩小并强制避让3D全息交互区，为屏幕滑屏手势彻底让路
         const jumpHologramPosition = () => {
             const nextLayer = document.getElementById('swipe-layer-next');
             const activeCell = (nextLayer && !nextLayer.classList.contains('hidden')) ? nextLayer.querySelector('.grid-cell.active') : document.querySelector('#swipe-layer-current .grid-cell.active');
@@ -1089,7 +1040,6 @@
             let targetY = 0;
             
             if (isMobile) {
-                // 移动端：大幅缩小模型(scale:0.55)，并在 Y 轴上深度避让作业网格，防止遮挡手势滑动
                 targetX = relativeX < 0.5 ? (viewW * 0.15) : (-viewW * 0.15);
                 targetY = relativeY < 0.5 ? (window.innerHeight * 0.28) : (-window.innerHeight * 0.28);
                 holoEl.style.setProperty('--anim-scale', '0.55');
@@ -1103,7 +1053,7 @@
             holoEl.style.setProperty('--ui-x', `${targetX}px`);
             holoEl.style.setProperty('--ui-y', `${targetY}px`);
             
-            void holoEl.offsetWidth; // 强制重排
+            void holoEl.offsetWidth; 
             
             holoEl.style.transition = 'transform 0.6s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.4s ease-out';
         };
@@ -1116,7 +1066,8 @@
                 targetWallRotY = -18 + rx * 15; targetWallRotX = 8 - ry * 10; 
             });
 
-            const preventCheck = (e) => e.target.closest('button') || e.target.closest('#main-sidebar') || e.target.closest('#cabinet-pipeline') || e.target.closest('#hologram-interaction-zone');
+            // 去掉了 #hologram-interaction-zone，允许手势击穿
+            const preventCheck = (e) => e.target.closest('button') || e.target.closest('#main-sidebar') || e.target.closest('#cabinet-pipeline');
 
             let touchStartY = 0, touchStartX = 0;
             v.addEventListener('touchstart', e => { touchStartY = e.touches[0].clientY; touchStartX = e.touches[0].clientX; }, {passive: true});
@@ -1125,7 +1076,6 @@
                 const dy = touchStartY - e.changedTouches[0].clientY; 
                 const dx = Math.abs(touchStartX - e.changedTouches[0].clientX);
                 if (Math.abs(dy) > 70 && Math.abs(dy) > dx) { 
-                    // 修复4：完全反转上下滑动逻辑，根据用户习惯，现更改为 "手指往上划 = 返回上一步"
                     if(dy > 0) prevGuidanceStep(); 
                     else nextGuidanceStep(); 
                 }
@@ -1135,15 +1085,19 @@
         let wheelTimeout;
         const handleWheel = (e) => { 
             if(state.mainView === 'cabinet' && !state.isAnimating) { 
-                if(e.target.closest('button') || e.target.closest('#main-sidebar') || e.target.closest('#cabinet-pipeline') || e.target.closest('#hologram-interaction-zone')) return;
-                
+                // 仅阻止按钮和UI区的滚动，允许 3D 模型区接收滚轮事件
+                if(e.target.closest('button') || e.target.closest('#main-sidebar') || e.target.closest('#cabinet-pipeline')) return;
                 if (window.wheelTimeout) clearTimeout(window.wheelTimeout); 
                 window.wheelTimeout = setTimeout(() => { if(e.deltaY>0) nextGuidanceStep(); else prevGuidanceStep(); }, 60); 
             } 
         };
 
         const initApp = () => {
-            if (viewer3D.scene) return; // 防止重复初始化
+            if (viewer3D.scene) return; 
+            
+            // 【执行全局 THREE 变量初始化】
+            initThreeGlobals(); 
+            
             init3DPartViewer(); 
             setupInteractions(); 
             renderMap(); 
