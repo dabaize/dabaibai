@@ -190,7 +190,7 @@
 
     <!-- 代码生成更新时间戳 -->
     <div class="fixed bottom-3 right-4 z-[9999] text-[10px] font-mono text-slate-400/60 pointer-events-none select-none tracking-wider">
-        Build: 2026-03-26 18:40 CST
+        Build: 2026-03-26 21:16 CST
     </div>
 
     <!-- 隐藏的文件上传域 -->
@@ -210,7 +210,7 @@
     </button>
 
     <!-- 空间导航路径指示器 -->
-    <div id="cabinet-pipeline" class="fixed top-[4.5rem] sm:top-6 left-1/2 transform -translate-x-1/2 z-[80] flex items-center gap-2 max-w-[90vw] sm:max-w-[65vw] overflow-x-auto no-scrollbar py-2 px-2 opacity-0 pointer-events-none transition-all duration-500"></div>
+    <div id="cabinet-pipeline" class="fixed top-[4.5rem] sm:top-6 left-1/2 transform -translate-x-1/2 z-[80] flex items-center gap-1 sm:gap-2 max-w-[96vw] sm:max-w-[65vw] overflow-x-auto no-scrollbar py-2 px-1 sm:px-2 opacity-0 pointer-events-none transition-all duration-500"></div>
 
     <!-- 侧边栏列表：高质感毛玻璃 -->
     <aside id="main-sidebar" class="fixed left-0 top-0 bottom-0 w-[300px] sm:w-[340px] p-5 sm:p-7 pt-24 sm:pt-28 z-[90] bg-white/50 backdrop-blur-3xl border-r border-white/60 shadow-[20px_0_60px_-20px_rgba(0,0,0,0.08)] transition-all duration-500 ease-[cubic-bezier(0.16,1,0.3,1)] sidebar-collapse flex flex-col">
@@ -588,8 +588,8 @@
         // ================= 3D Engine =================
         const viewer3D = { scene: null, camera: null, renderer: null, controls: null, activeWrapper: null, labelGroup: null, currentSession: 0, currentPart: null };
         
-        let targetWallRotX = 8, targetWallRotY = -18, targetWallOffsetY = 0; 
-        let currentWallRotX = 8, currentWallRotY = -18, currentWallOffsetY = 0;
+        let targetWallRotX = 8, targetWallRotY = -18, targetWallOffsetY = 0, targetWallOffsetX = 0; 
+        let currentWallRotX = 8, currentWallRotY = -18, currentWallOffsetY = 0, currentWallOffsetX = 0;
         let wallContainerEl = null;
 
         function init3DPartViewer() {
@@ -628,9 +628,10 @@
                     currentWallRotX += (targetWallRotX - currentWallRotX) * 0.05;
                     currentWallRotY += (targetWallRotY - currentWallRotY) * 0.05;
                     currentWallOffsetY += (targetWallOffsetY - currentWallOffsetY) * 0.05;
+                    currentWallOffsetX += (targetWallOffsetX - currentWallOffsetX) * 0.05;
                     
-                    if (wallContainerEl && (Math.abs(targetWallRotX - currentWallRotX) > 0.01 || Math.abs(targetWallRotY - currentWallRotY) > 0.01 || Math.abs(targetWallOffsetY - currentWallOffsetY) > 0.01)) {
-                        wallContainerEl.style.transform = `rotateX(${currentWallRotX.toFixed(2)}deg) rotateY(${currentWallRotY.toFixed(2)}deg) translateZ(-50px) translateY(${currentWallOffsetY.toFixed(2)}vh)`;
+                    if (wallContainerEl && (Math.abs(targetWallRotX - currentWallRotX) > 0.01 || Math.abs(targetWallRotY - currentWallRotY) > 0.01 || Math.abs(targetWallOffsetY - currentWallOffsetY) > 0.01 || Math.abs(targetWallOffsetX - currentWallOffsetX) > 0.01)) {
+                        wallContainerEl.style.transform = `rotateX(${currentWallRotX.toFixed(2)}deg) rotateY(${currentWallRotY.toFixed(2)}deg) translateZ(-50px) translateY(${currentWallOffsetY.toFixed(2)}vh) translateX(${currentWallOffsetX.toFixed(2)}vw)`;
                     }
 
                     if (viewer3D.controls && viewer3D.controls.enabled) viewer3D.controls.update();
@@ -975,8 +976,8 @@
             let html = '';
             p.forEach((item, idx) => {
                 const c = idx === curIdx ? "bg-slate-900 text-white shadow-[0_10px_20px_-5px_rgba(0,0,0,0.3),inset_0_1px_1px_rgba(255,255,255,0.2)] transform scale-110 z-10" : (idx < curIdx ? "bg-emerald-50 text-emerald-600 shadow-sm border border-emerald-100" : "bg-white/80 backdrop-blur-md text-slate-500 shadow-sm border border-white");
-                html += `<div class="px-5 py-2.5 rounded-full text-[11px] font-black tracking-wider transition-all duration-500 ease-out ${c} whitespace-nowrap">${item.name}</div>`;
-                if(idx < p.length - 1) html += `<div class="w-6 h-[2px] ${idx<curIdx?'bg-emerald-300':(idx===curIdx?'bg-slate-300':'bg-white')} rounded-full shrink-0 shadow-sm"></div>`;
+                html += `<div class="px-3 py-1.5 sm:px-5 sm:py-2.5 rounded-full text-[10px] sm:text-[11px] font-black tracking-wider transition-all duration-500 ease-out ${c} whitespace-nowrap">${item.name}</div>`;
+                if(idx < p.length - 1) html += `<div class="w-3 sm:w-6 h-[2px] ${idx<curIdx?'bg-emerald-300':(idx===curIdx?'bg-slate-300':'bg-white')} rounded-full shrink-0 shadow-sm"></div>`;
             });
             container.innerHTML = html; setTimeout(() => container.querySelector('.scale-110')?.scrollIntoView({ inline: 'center', behavior: 'smooth' }), 50);
         };
@@ -1133,11 +1134,18 @@
             if (!activeCell) return;
             const cabGrid = activeCell.closest('.cabinet-grid'); if(!cabGrid) return;
 
+            const relativeX = (activeCell.offsetLeft + activeCell.offsetWidth / 2) / cabGrid.offsetWidth;
             const relativeY = (activeCell.offsetTop + activeCell.offsetHeight / 2) / cabGrid.offsetHeight;
-            const panRange = window.innerWidth < 768 ? 130 : 60; 
-            const baseOffset = window.innerWidth < 768 ? -18 : 0; 
+            const isMobile = window.innerWidth < 768;
             
-            targetWallOffsetY = (0.5 - relativeY) * panRange + baseOffset; 
+            // Y 轴平移算法
+            const panRangeY = isMobile ? 130 : 60; 
+            const baseOffsetY = isMobile ? -10 : 0; 
+            targetWallOffsetY = (0.5 - relativeY) * panRangeY + baseOffsetY; 
+            
+            // X 轴平移算法：强制补偿，让不在中间的格子也被推到视野正中心区
+            const panRangeX = isMobile ? 120 : 40; 
+            targetWallOffsetX = (0.5 - relativeX) * panRangeX; 
         };
 
         const jumpHologramPosition = () => {
@@ -1204,7 +1212,9 @@
                     const rect = visualRing.getBoundingClientRect();
                     const centerX = rect.left + rect.width / 2;
                     const centerY = rect.top + rect.height / 2;
-                    const radius = rect.width / 2;
+                    
+                    // 将交互热区物理半径扩大 1.8 倍，极大地提升选中 3D 模型的容错率
+                    const radius = (rect.width / 2) * 1.8;
                     
                     const distSq = Math.pow(touchStartX - centerX, 2) + Math.pow(touchStartY - centerY, 2);
                     
