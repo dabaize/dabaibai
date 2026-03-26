@@ -162,6 +162,7 @@
         #part-3d-viewer canvas { 
             filter: drop-shadow(0 40px 40px rgba(0,0,0,0.15)); 
             transform-origin: center bottom;
+            outline: none;
         }
 
         .sidebar-collapse { transform: translateX(-100%); opacity: 0; pointer-events: none; }
@@ -186,6 +187,11 @@
     </style>
 </head>
 <body class="h-[100dvh] w-screen flex relative select-none">
+
+    <!-- 代码生成更新时间戳 -->
+    <div class="fixed bottom-3 right-4 z-[9999] text-[10px] font-mono text-slate-400/60 pointer-events-none select-none tracking-wider">
+        Build: 2026-03-26 18:40 CST
+    </div>
 
     <!-- 隐藏的文件上传域 -->
     <input type="file" id="excel-upload" accept=".xlsx, .xls, .csv" class="hidden" onchange="handleExcelUpload(event)">
@@ -280,7 +286,7 @@
         </div>
 
         <!-- 3D 拣货实景层 -->
-        <div id="view-3d-picking" class="absolute inset-0 z-20 hidden">
+        <div id="view-3d-picking" class="absolute inset-0 z-20 hidden pointer-events-auto touch-none">
             <!-- Background Wall -->
             <div id="layer1-bg-wall" class="absolute inset-0 z-10 pointer-events-none">
                 <div id="cabinet-wall-container">
@@ -291,11 +297,12 @@
                 </div>
             </div>
 
-            <!-- 3D Hologram 视图 -->
-            <div id="layer2-3d-hologram" class="absolute inset-0 z-30 pointer-events-none flex items-center justify-center overflow-hidden dynamic-ui">
-                <!-- 【终极修复方案】：通过绝对居中、微弱的高级背板（玻璃底座质感），彻底修复透明 div 在移动端无响应的恶性 Bug。并将交互区完美包裹在模型周围 -->
-                <div id="local-interaction-zone" class="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-[85vw] max-w-[420px] h-[85vw] max-h-[420px] z-40 pointer-events-auto touch-none cursor-grab active:cursor-grabbing rounded-full bg-white/[0.02] border border-white/10 shadow-[inset_0_0_20px_rgba(255,255,255,0.03)] backdrop-blur-[1px] transition-colors hover:bg-white/[0.04]"></div>
-                <div id="part-3d-viewer" class="w-full h-full pointer-events-none"></div>
+            <!-- 3D Hologram 视图：纯包裹器，将事件控制权还给 Canvas，移除了会导致 Bug 的覆盖层 -->
+            <div id="layer2-3d-hologram" class="absolute inset-0 z-30 flex items-center justify-center overflow-hidden dynamic-ui pointer-events-none touch-none">
+                <!-- 纯视觉高亮底圈，用于计算命中区域（无交互拦截能力） -->
+                <div id="visual-holo-ring" class="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-[85vw] max-w-[420px] h-[85vw] max-h-[420px] z-10 pointer-events-none rounded-full bg-white/[0.02] border border-white/10 shadow-[inset_0_0_20px_rgba(255,255,255,0.03)] backdrop-blur-[1px]"></div>
+                <!-- 核心修复：允许 Canvas 本身响应交互事件 -->
+                <div id="part-3d-viewer" class="w-full h-full z-20 pointer-events-auto"></div>
             </div>
 
             <div class="absolute inset-0 z-50 pointer-events-none">
@@ -597,8 +604,8 @@
             viewer3D.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
             container.appendChild(viewer3D.renderer.domElement);
             
-            const interactZone = document.getElementById('local-interaction-zone');
-            viewer3D.controls = new THREE.OrbitControls(viewer3D.camera, interactZone);
+            // 核心修复：将交互控制器彻底绑定到原生的 Canvas 渲染层上，免疫一切穿透 Bug
+            viewer3D.controls = new THREE.OrbitControls(viewer3D.camera, viewer3D.renderer.domElement);
             viewer3D.controls.enableDamping = true; viewer3D.controls.dampingFactor = 0.05;
             
             viewer3D.controls.minDistance = 8; 
@@ -1184,29 +1191,54 @@
             const preventCheck = (e) => e.target.closest('button') || e.target.closest('#main-sidebar') || e.target.closest('#cabinet-pipeline');
 
             let touchStartY = 0, touchStartX = 0, touchStartTime = 0;
+            let isTouchingModelZone = false;
             
             view3D.addEventListener('touchstart', e => { 
                 touchStartY = e.touches[0].clientY; 
                 touchStartX = e.touches[0].clientX; 
                 touchStartTime = Date.now();
+                
+                // 核心修复：纯 JS 几何碰撞检测，完美免疫一切 DOM 透明层叠带来的触摸丢失 Bug
+                const visualRing = document.getElementById('visual-holo-ring');
+                if (visualRing) {
+                    const rect = visualRing.getBoundingClientRect();
+                    const centerX = rect.left + rect.width / 2;
+                    const centerY = rect.top + rect.height / 2;
+                    const radius = rect.width / 2;
+                    
+                    const distSq = Math.pow(touchStartX - centerX, 2) + Math.pow(touchStartY - centerY, 2);
+                    
+                    if (distSq <= radius * radius) {
+                        // 在光环内：开启 3D 旋转控制
+                        isTouchingModelZone = true;
+                        if(viewer3D.controls) viewer3D.controls.enabled = true;
+                    } else {
+                        // 在光环外：临时剥夺 3D 旋转控制权，防止空白处的误触旋转
+                        isTouchingModelZone = false;
+                        if(viewer3D.controls) viewer3D.controls.enabled = false;
+                    }
+                } else {
+                    isTouchingModelZone = false;
+                }
             }, {passive: true});
             
             view3D.addEventListener('touchend', e => {
+                // 恢复 3D 引擎的控制权
+                if(viewer3D.controls) viewer3D.controls.enabled = true;
+
                 if(state.mainView !== 'cabinet' || preventCheck(e)) return; 
                 const dy = touchStartY - e.changedTouches[0].clientY; 
                 const dx = Math.abs(touchStartX - e.changedTouches[0].clientX);
                 const dt = Date.now() - touchStartTime;
 
-                const isLocalZone = e.target.closest('#local-interaction-zone');
-
-                if (isLocalZone) {
-                    // 在模型热区内滑动时，使用更严格的阈值避免干扰 3D 旋转
-                    if (dt < 400 && Math.abs(dy) > 60 && Math.abs(dy) > dx * 1.5) { 
+                if (isTouchingModelZone) {
+                    // 如果落在热区：需要更苛刻的滑动判定，避免和正常的 3D 模型旋转冲突
+                    if (dt < 400 && Math.abs(dy) > 80 && Math.abs(dy) > dx * 1.8) { 
                         if(dy > 0) prevGuidanceStep(); 
                         else nextGuidanceStep(); 
                     }
                 } else {
-                    // 在空白区滑动时，直接响应翻页
+                    // 如果落在周围空白区：常规滑动即可翻页
                     if (Math.abs(dy) > 40 && Math.abs(dy) > dx) { 
                         if(dy > 0) prevGuidanceStep(); 
                         else nextGuidanceStep(); 
