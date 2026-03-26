@@ -279,7 +279,7 @@
             </div>
         </div>
 
-        <!-- 3D 拣货实景层 (移除了鼠标滚轮拦截，把缩放权还给 3D OrbitControls) -->
+        <!-- 3D 拣货实景层 -->
         <div id="view-3d-picking" class="absolute inset-0 z-20 hidden">
             <!-- Background Wall -->
             <div id="layer1-bg-wall" class="absolute inset-0 z-10 pointer-events-none">
@@ -291,10 +291,10 @@
                 </div>
             </div>
 
-            <!-- 3D Hologram -->
+            <!-- 3D Hologram 视图 -->
             <div id="layer2-3d-hologram" class="absolute inset-0 z-30 pointer-events-none flex items-center justify-center overflow-hidden dynamic-ui">
-                <!-- 将交互热区限制在模型周围 -->
-                <div id="local-interaction-zone" class="absolute w-[80vw] max-w-[420px] h-[80vw] max-h-[420px] z-40 pointer-events-auto touch-none cursor-grab active:cursor-grabbing rounded-full"></div>
+                <!-- 【终极修复方案】：通过绝对居中、微弱的高级背板（玻璃底座质感），彻底修复透明 div 在移动端无响应的恶性 Bug。并将交互区完美包裹在模型周围 -->
+                <div id="local-interaction-zone" class="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-[85vw] max-w-[420px] h-[85vw] max-h-[420px] z-40 pointer-events-auto touch-none cursor-grab active:cursor-grabbing rounded-full bg-white/[0.02] border border-white/10 shadow-[inset_0_0_20px_rgba(255,255,255,0.03)] backdrop-blur-[1px] transition-colors hover:bg-white/[0.04]"></div>
                 <div id="part-3d-viewer" class="w-full h-full pointer-events-none"></div>
             </div>
 
@@ -546,7 +546,6 @@
 
         const loadModelAsset = (url, type) => new Promise((resolve, reject) => new (type === 'obj' ? THREE.OBJLoader : THREE.FBXLoader)().load(url, resolve, undefined, reject));
 
-        // 核心修复 ①：放大基础基准比例，动态靶向曲线更加舒展
         const processRawModel = (rawModel, partName) => {
             const baseColors = [0x6366f1, 0x10b981, 0xf43f5e, 0xf59e0b, 0x8b5cf6, 0x0ea5e9];
             let hash = 0; for (let j = 0; j < partName.length; j++) hash = partName.charCodeAt(j) + ((hash << 5) - hash);
@@ -565,15 +564,14 @@
             const size = box.getSize(new THREE.Vector3()); 
             const maxDim = Math.max(size.x, size.y, size.z);
             
-            // 比例全面放大调优，保证小模型不再迷你，大模型依然受限
             if (maxDim > 0 && isFinite(maxDim)) {
                 let targetSize;
                 if (maxDim > 10.0) {
-                    targetSize = 4.0; // 提升了大模型的阈值（原为2.5）
+                    targetSize = 4.0;
                 } else if (maxDim < 0.2) {
-                    targetSize = 1.2; // 提升了微小模型的阈值（原为0.8）
+                    targetSize = 1.2; 
                 } else {
-                    targetSize = Math.sqrt(maxDim) * 1.8; // 中等件曲线放大了 50%
+                    targetSize = Math.sqrt(maxDim) * 1.8; 
                 }
                 wrapper.scale.setScalar(targetSize / maxDim);
             }
@@ -599,13 +597,12 @@
             viewer3D.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
             container.appendChild(viewer3D.renderer.domElement);
             
-            // 将手势事件绑定层限制为局部的 3D 模型区域
             const interactZone = document.getElementById('local-interaction-zone');
             viewer3D.controls = new THREE.OrbitControls(viewer3D.camera, interactZone);
             viewer3D.controls.enableDamping = true; viewer3D.controls.dampingFactor = 0.05;
             
-            viewer3D.controls.minDistance = 8; // 放宽最小放大距离
-            viewer3D.controls.maxDistance = 50; // 放宽最大缩小距离
+            viewer3D.controls.minDistance = 8; 
+            viewer3D.controls.maxDistance = 50; 
             
             viewer3D.controls.enablePan = false; 
             viewer3D.controls.enableZoom = true;
@@ -621,7 +618,6 @@
                 requestAnimationFrame(animate); 
                 
                 if (state.mainView === 'cabinet') {
-                    // 核心修复 ②：降速使得过渡更为顺滑（从 0.08 降为 0.05）
                     currentWallRotX += (targetWallRotX - currentWallRotX) * 0.05;
                     currentWallRotY += (targetWallRotY - currentWallRotY) * 0.05;
                     currentWallOffsetY += (targetWallOffsetY - currentWallOffsetY) * 0.05;
@@ -676,7 +672,6 @@
             newWrapper.isTaskWrapper = true; 
             
             let physicalModel = new THREE.Group();
-            // 核心修复 ①：额外加持，让经过靶向曲线优化的模型整体再放大 40% 的视野占比
             physicalModel.scale.setScalar(1.4); 
             newWrapper.add(physicalModel);
 
@@ -830,7 +825,6 @@
                 svgEl.addEventListener('pointerdown', e => { if(state.mainView!=='map')return; mapState.isDragging=true; mapState.lastX=e.clientX; mapState.lastY=e.clientY; mapState.startX=e.clientX; mapState.startY=e.clientY; mapState.clickTarget=e.target; svgEl.setPointerCapture(e.pointerId); svgEl.style.cursor='grabbing'; svgEl.style.transition='none'; });
                 svgEl.addEventListener('pointermove', e => { if(!mapState.isDragging||state.mainView!=='map')return; const rect = svgEl.getBoundingClientRect(); mapState.viewBox.x -= (e.clientX-mapState.lastX)*(mapState.viewBox.w/rect.width); mapState.viewBox.y -= (e.clientY-mapState.lastY)*(mapState.viewBox.h/rect.height); mapState.lastX=e.clientX; mapState.lastY=e.clientY; svgEl.setAttribute('viewBox', `${mapState.viewBox.x} ${mapState.viewBox.y} ${mapState.viewBox.w} ${mapState.viewBox.h}`); });
                 svgEl.addEventListener('pointerup', e => { if(state.mainView!=='map')return; mapState.isDragging=false; svgEl.releasePointerCapture(e.pointerId); svgEl.style.cursor='grab'; svgEl.style.transition='viewBox 0.5s cubic-bezier(0.16,1,0.3,1)'; if(Math.abs(e.clientX-mapState.startX)<5 && Math.abs(e.clientY-mapState.startY)<5 && mapState.clickTarget?.closest('.cabinet-target')) switchMainView('cabinet'); mapState.clickTarget=null; });
-                svgEl.addEventListener('wheel', e => { if(state.mainView!=='map')return; e.preventDefault(); const zoom=e.deltaY>0?1.15:0.85; const r=svgEl.getBoundingClientRect(); const mx=e.clientX-r.left, my=e.clientY-r.top; const vmx=mapState.viewBox.x+(mx/r.width)*mapState.viewBox.w, vmy=mapState.viewBox.y+(my/r.height)*mapState.viewBox.h; mapState.viewBox.w*=zoom; mapState.viewBox.h*=zoom; mapState.viewBox.x=vmx-(mx/r.width)*mapState.viewBox.w; mapState.viewBox.y=vmy-(my/r.height)*mapState.viewBox.h; svgEl.setAttribute('viewBox', `${mapState.viewBox.x} ${mapState.viewBox.y} ${mapState.viewBox.w} ${mapState.viewBox.h}`); }, { passive: false });
             }
             svgEl.innerHTML = `${bgSvg}${pathSvg}${cabsSvg}`;
             
@@ -1103,7 +1097,6 @@
 
         let initialBeta = null; 
 
-        // 核心修复 ②：对陀螺仪信号加上安全的角度钳位(Clamp)，并强化顺滑度
         const handleDeviceOrientation = (e) => {
             if (state.mainView !== 'cabinet' || !e.gamma || !e.beta) return;
             
@@ -1123,7 +1116,6 @@
             const rawY = -18 + rx * 45; 
             const rawX = 8 - ry * 35; 
             
-            // 加入安全极限阈值锁定，绝不翻出界
             targetWallRotY = Math.max(-40, Math.min(4, rawY)); 
             targetWallRotX = Math.max(-10, Math.min(26, rawX)); 
         };
@@ -1185,7 +1177,6 @@
                 const rx = (e.clientX / window.innerWidth - 0.5) * 2; 
                 const ry = (e.clientY / window.innerHeight - 0.5) * 2;
                 
-                // 桌面端的极限角度限制
                 targetWallRotY = Math.max(-35, Math.min(0, -18 + rx * 25));
                 targetWallRotX = Math.max(-5, Math.min(25, 8 - ry * 20)); 
             });
@@ -1209,13 +1200,13 @@
                 const isLocalZone = e.target.closest('#local-interaction-zone');
 
                 if (isLocalZone) {
-                    // 在模型区域内，严格切分“手指拖拽旋转”和“快速滑动翻页”
+                    // 在模型热区内滑动时，使用更严格的阈值避免干扰 3D 旋转
                     if (dt < 400 && Math.abs(dy) > 60 && Math.abs(dy) > dx * 1.5) { 
                         if(dy > 0) prevGuidanceStep(); 
                         else nextGuidanceStep(); 
                     }
                 } else {
-                    // 在模型外部的空白区，只需普通的滑动即可翻页
+                    // 在空白区滑动时，直接响应翻页
                     if (Math.abs(dy) > 40 && Math.abs(dy) > dx) { 
                         if(dy > 0) prevGuidanceStep(); 
                         else nextGuidanceStep(); 
