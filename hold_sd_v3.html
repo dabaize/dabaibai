@@ -368,20 +368,26 @@
             return { cabId: '未分配', row: 0, col: 0, rawStr: `位置异常: ${typeStr} ${locStr}` };
         };
 
-        const fetchRecordFromURL = async (sdID) => {
+        const fetchRecordFromURL = async (sdIDParam) => {
+            const sdIDs = sdIDParam.split('|').map(id => id.trim()).filter(id => id);
+            if (sdIDs.length === 0) return;
+
             const container = document.getElementById('dashboard-container');
             if(container) {
                 container.innerHTML = `
                     <div class="flex flex-col items-center justify-center w-full h-full glass-panel rounded-[2rem] animate-pulse">
                         <i data-lucide="cloud-download" class="w-12 h-12 text-brand-500 mb-4 opacity-80"></i>
                         <h3 class="text-xl font-black text-slate-800 tracking-tight mb-1">正在同步云端补件任务...</h3>
-                        <p class="text-xs font-mono text-slate-400">任务ID: ${sdID}</p>
+                        <p class="text-xs font-mono text-slate-400 max-w-[80%] truncate text-center">任务ID: ${sdIDs.join(', ')}</p>
                     </div>
                 `;
                 lucide.createIcons();
             }
 
             try {
+                // 构造批量 OR 查询条件
+                const conditions = sdIDs.map(id => ({ field_name: "任务ID", operator: "is", value: [id] }));
+                
                 const response = await fetch(API_ENDPOINT, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
@@ -389,8 +395,8 @@
                         action: 'getRecords',
                         BitableUUID: 'BitableUUID085',
                         filter: {
-                            conjunction: "and",
-                            conditions: [{ field_name: "任务ID", operator: "is", value: [sdID] }]
+                            conjunction: "or",
+                            conditions: conditions
                         }
                     })
                 });
@@ -398,22 +404,31 @@
                 const data = await response.json();
                 
                 if (data.code === 0 && data.data && data.data.items && data.data.items.length > 0) {
-                    const record = data.data.items[0];
-                    const status = extractFieldText(record.fields['完成情况']);
+                    const items = data.data.items;
+                    let allCompleted = true;
+                    let allUnfinishedParts = [];
+
+                    items.forEach(record => {
+                        const status = extractFieldText(record.fields['完成情况']);
+                        if (status !== '已完成') {
+                            allCompleted = false; // 只要有一个没完成，整体就视为有作业任务
+                            const taskDesc = extractFieldText(record.fields['任务描述']) || '';
+                            const match = taskDesc.match(/缺件【(.*?)】/);
+                            if (match && match[1]) {
+                                const rawParts = match[1].split(/[,，、\s]+/);
+                                allUnfinishedParts.push(...rawParts.filter(p => p.trim() !== ''));
+                            }
+                        }
+                    });
                     
-                    if (status === '已完成') {
-                        state.alreadyCompletedMessage = `该任务 (ID: ${sdID}) 的缺件补发已完成，无需重复作业。`;
+                    if (allCompleted) {
+                        state.alreadyCompletedMessage = `选中任务 (${sdIDs.join(', ')}) 的缺件补发均已完成，无需重复作业。`;
                         updateUI();
                         return;
                     }
 
-                    const taskDesc = extractFieldText(record.fields['任务描述']) || '';
-                    const match = taskDesc.match(/缺件【(.*?)】/);
-                    
-                    if (match && match[1]) {
-                        const rawParts = match[1].split(/[,，、\s]+/);
-                        const uniqueParts = [...new Set(rawParts.filter(p => p.trim() !== ''))];
-                        
+                    if (allUnfinishedParts.length > 0) {
+                        const uniqueParts = [...new Set(allUnfinishedParts)];
                         await fetchCloudLocations(uniqueParts);
 
                         let newTasks = [];
@@ -434,7 +449,7 @@
 
                         if (newTasks.length > 0) {
                             state.pickingTasks = newTasks;
-                            state.listName = `缺件补发任务单`;
+                            state.listName = sdIDs.length > 1 ? `合并缺件补发 (${sdIDs.length}个任务)` : `缺件补发任务单`;
                             state.modelsPreloaded = false;
                             state.isPreloading = false;
                             state.preloadProgress = 0;
@@ -1233,28 +1248,34 @@
             if (!state.completedReport) return;
             const btn = document.getElementById('archive-btn');
             if (btn) {
-                btn.innerHTML = `<i data-lucide="loader-2" class="w-4 h-4 animate-spin"></i> 正在处理数据...`;
+                btn.innerHTML = `<i data-lucide="loader-2" class="w-4 h-4 animate-spin"></i> 正在批量归档...`;
                 btn.disabled = true;
                 lucide.createIcons();
             }
 
             const urlParams = new URLSearchParams(window.location.search);
-            const sdID = urlParams.get('sdID');
+            const sdIDParam = urlParams.get('sdID');
 
-            if (sdID) {
+            if (sdIDParam) {
+                const sdIDs = sdIDParam.split('|').map(id => id.trim()).filter(id => id);
                 try {
-                    await fetch(API_ENDPOINT, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({
-                            action: 'updateRecord',
-                            BitableUUID: 'BitableUUID085',
-                            filter: { conjunction: "and", conditions: [{ field_name: "任务ID", operator: "is", value: [sdID] }] },
-                            fields: { "完成情况": "已完成" }
-                        })
+                    // 并发发送多条更新请求，确保所有相关任务均被标记
+                    const updatePromises = sdIDs.map(id => {
+                        return fetch(API_ENDPOINT, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                                action: 'updateRecord',
+                                BitableUUID: 'BitableUUID085',
+                                filter: { conjunction: "and", conditions: [{ field_name: "任务ID", operator: "is", value: [id] }] },
+                                fields: { "完成情况": "已完成" }
+                            })
+                        });
                     });
 
-                    alert("✅ 云端归档已完成！任务状态已更新。");
+                    await Promise.all(updatePromises);
+
+                    alert(`✅ 云端归档已完成！${sdIDs.length} 个任务状态已成功更新。`);
                 } catch (e) {
                     console.error("Archive Error:", e);
                     alert("❌ 云端更新失败，请检查网络！");
