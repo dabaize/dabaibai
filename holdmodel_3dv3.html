@@ -291,12 +291,10 @@
                 </div>
             </div>
 
-            <!-- 核心修复点 ③：引入一个全局的全屏操作覆盖层。
-                 touch-none 阻止浏览器的默认回弹，确保模型 3D 旋转和缩放绝对顺滑且不冲突 -->
-            <div id="global-interaction-zone" class="absolute inset-0 z-20 pointer-events-auto touch-none cursor-grab active:cursor-grabbing"></div>
-
-            <!-- 3D Hologram (纯视觉展示层，剥离了事件交互层，不再受 css scale 的影响) -->
+            <!-- 3D Hologram -->
             <div id="layer2-3d-hologram" class="absolute inset-0 z-30 pointer-events-none flex items-center justify-center overflow-hidden dynamic-ui">
+                <!-- 将交互热区限制在模型周围 -->
+                <div id="local-interaction-zone" class="absolute w-[80vw] max-w-[420px] h-[80vw] max-h-[420px] z-40 pointer-events-auto touch-none cursor-grab active:cursor-grabbing rounded-full"></div>
                 <div id="part-3d-viewer" class="w-full h-full pointer-events-none"></div>
             </div>
 
@@ -601,8 +599,8 @@
             viewer3D.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
             container.appendChild(viewer3D.renderer.domElement);
             
-            // 核心修复 ③：将手势事件绑定层独立于缩放容器之上，确保整屏都可以触发 3D 旋转缩放
-            const interactZone = document.getElementById('global-interaction-zone');
+            // 将手势事件绑定层限制为局部的 3D 模型区域
+            const interactZone = document.getElementById('local-interaction-zone');
             viewer3D.controls = new THREE.OrbitControls(viewer3D.camera, interactZone);
             viewer3D.controls.enableDamping = true; viewer3D.controls.dampingFactor = 0.05;
             
@@ -1180,7 +1178,7 @@
         };
 
         const setupInteractions = () => {
-            const interactZone = document.getElementById('global-interaction-zone');
+            const view3D = document.getElementById('view-3d-picking');
             
             window.addEventListener('mousemove', e => {
                 if (state.mainView !== 'cabinet') return;
@@ -1196,22 +1194,32 @@
 
             let touchStartY = 0, touchStartX = 0, touchStartTime = 0;
             
-            interactZone.addEventListener('touchstart', e => { 
+            view3D.addEventListener('touchstart', e => { 
                 touchStartY = e.touches[0].clientY; 
                 touchStartX = e.touches[0].clientX; 
                 touchStartTime = Date.now();
             }, {passive: true});
             
-            interactZone.addEventListener('touchend', e => {
+            view3D.addEventListener('touchend', e => {
                 if(state.mainView !== 'cabinet' || preventCheck(e)) return; 
                 const dy = touchStartY - e.changedTouches[0].clientY; 
                 const dx = Math.abs(touchStartX - e.changedTouches[0].clientX);
                 const dt = Date.now() - touchStartTime;
 
-                // 核心修复 ③：通过判定位移时间（< 400ms）和位移主轴向，完美切分“手指拖拽旋转”和“快速滑动翻页”
-                if (dt < 400 && Math.abs(dy) > 60 && Math.abs(dy) > dx * 1.5) { 
-                    if(dy > 0) prevGuidanceStep(); 
-                    else nextGuidanceStep(); 
+                const isLocalZone = e.target.closest('#local-interaction-zone');
+
+                if (isLocalZone) {
+                    // 在模型区域内，严格切分“手指拖拽旋转”和“快速滑动翻页”
+                    if (dt < 400 && Math.abs(dy) > 60 && Math.abs(dy) > dx * 1.5) { 
+                        if(dy > 0) prevGuidanceStep(); 
+                        else nextGuidanceStep(); 
+                    }
+                } else {
+                    // 在模型外部的空白区，只需普通的滑动即可翻页
+                    if (Math.abs(dy) > 40 && Math.abs(dy) > dx) { 
+                        if(dy > 0) prevGuidanceStep(); 
+                        else nextGuidanceStep(); 
+                    }
                 }
             }, {passive: true});
         };
