@@ -81,10 +81,14 @@
 
         /* 3D 柜体容器 */
         #cabinet-wall-container {
-           will-change: transform;
-    backface-visibility: hidden;
-    -webkit-backface-visibility: hidden;
-    transform: translateZ(0); /* 强制 GPU 层 */
+            width: 120vw; height: 120vh;
+            position: absolute; left: -10vw; top: -10vh; 
+            transform-style: preserve-3d;
+            transform: rotateX(8deg) rotateY(-18deg) translateZ(-50px) translateY(0vh);
+            will-change: transform; /* 性能优化：启用 GPU 硬件加速层 */
+            backface-visibility: hidden;
+            -webkit-backface-visibility: hidden;
+            transform: translateZ(0); /* 强制 GPU 层 */
         }
 
         .cabinet-grid { 
@@ -189,7 +193,7 @@
 
     <!-- 代码生成更新时间戳 -->
     <div class="fixed bottom-3 right-4 z-[9999] text-[10px] font-mono text-slate-400/60 pointer-events-none select-none tracking-wider">
-        Build: 2011-03-26 21:16 CST
+        Build: 2026-03-26 21:16 CST
     </div>
 
     <!-- 隐藏的文件上传域 -->
