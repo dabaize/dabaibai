@@ -556,6 +556,9 @@
             rawModel.traverse(child => { if (child.isMesh) child.material = customMat; });
             const box = new THREE.Box3().setFromObject(rawModel);
             
+            // 【安全拦截】如果模型损坏或为空，立刻返回备用组，防止产生 NaN 毒化 WebGL
+            if (box.isEmpty()) return new THREE.Group();
+
             const center = box.getCenter(new THREE.Vector3());
             rawModel.position.sub(center);
 
@@ -565,17 +568,14 @@
             const size = box.getSize(new THREE.Vector3()); 
             const maxDim = Math.max(size.x, size.y, size.z);
             
-            // 【核心修复】：根据模型原始尺寸，动态分配目标大小，保留相对尺寸感
-            if (maxDim > 0) {
+            // 【核心修复】：根据模型原始尺寸，动态分配目标大小，保留相对尺寸感，并拦截异常值
+            if (maxDim > 0 && isFinite(maxDim)) {
                 let targetSize;
                 if (maxDim > 10.0) {
-                    // 超大件：严格压缩，防溢出屏幕（如长条铁轨/大机箱）
                     targetSize = 2.5; 
                 } else if (maxDim < 0.2) {
-                    // 极小件：适度放大保证可见度，但不超过 0.8，保留它的“娇小感”
                     targetSize = 0.8; 
                 } else {
-                    // 适中件：使用开方曲线平滑过渡，让不同模型的视觉比例更加自然
                     targetSize = Math.sqrt(maxDim) * 1.2; 
                 }
                 wrapper.scale.setScalar(targetSize / maxDim);
@@ -738,12 +738,20 @@
             
             physicalModel.add(loadedMesh);
             const box = new THREE.Box3().setFromObject(loadedMesh); 
-            let maxY = 1.0; if (box.max.y !== Infinity && box.max.y !== -Infinity) maxY = box.max.y;
+            let maxY = 1.0; 
+            // 【安全拦截】确保包围盒顶部计算不会返回 Infinity，防止文字飞出屏幕消失
+            if (isFinite(box.max.y) && !isNaN(box.max.y)) maxY = box.max.y;
 
             new TWEEN.Tween(label3D.position).to({ y: maxY + 1.2 }, 400).easing(TWEEN.Easing.Cubic.Out).start();
 
-            loadedMesh.scale.setScalar(0.01);
-            new TWEEN.Tween(loadedMesh.scale).to({ x: 1, y: 1, z: 1 }, 600).easing(TWEEN.Easing.Elastic.Out).start();
+            // 【核心修复】保存已被计算好的安全缩放比例，绝对不能将目标缩放硬编码为 {x:1, y:1, z:1}
+            const targetScale = loadedMesh.scale.clone(); 
+            
+            loadedMesh.scale.setScalar(0.001);
+            new TWEEN.Tween(loadedMesh.scale)
+                .to({ x: targetScale.x, y: targetScale.y, z: targetScale.z }, 600)
+                .easing(TWEEN.Easing.Elastic.Out)
+                .start();
 
             if (session === viewer3D.currentSession) {
                 loaderUi.classList.add('hidden');
