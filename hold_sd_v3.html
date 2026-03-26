@@ -375,7 +375,7 @@
                     <div class="flex flex-col items-center justify-center w-full h-full glass-panel rounded-[2rem] animate-pulse">
                         <i data-lucide="cloud-download" class="w-12 h-12 text-brand-500 mb-4 opacity-80"></i>
                         <h3 class="text-xl font-black text-slate-800 tracking-tight mb-1">正在同步云端补件任务...</h3>
-                        <p class="text-xs font-mono text-slate-400">关联任务: ${sdID}</p>
+                        <p class="text-xs font-mono text-slate-400">任务ID: ${sdID}</p>
                     </div>
                 `;
                 lucide.createIcons();
@@ -390,7 +390,7 @@
                         BitableUUID: 'BitableUUID085',
                         filter: {
                             conjunction: "and",
-                            conditions: [{ field_name: "关联任务", operator: "is", value: [sdID] }]
+                            conditions: [{ field_name: "任务ID", operator: "is", value: [sdID] }]
                         }
                     })
                 });
@@ -402,13 +402,13 @@
                     const status = extractFieldText(record.fields['完成情况']);
                     
                     if (status === '已完成') {
-                        state.alreadyCompletedMessage = `关联任务 (sdID: ${sdID}) 的补件清单已被标记为已完成，无需重复作业。`;
+                        state.alreadyCompletedMessage = `该任务 (ID: ${sdID}) 的缺件补发已完成，无需重复作业。`;
                         updateUI();
                         return;
                     }
 
                     const taskDesc = extractFieldText(record.fields['任务描述']) || '';
-                    const match = taskDesc.match(/补仓【(.*?)】/);
+                    const match = taskDesc.match(/缺件【(.*?)】/);
                     
                     if (match && match[1]) {
                         const rawParts = match[1].split(/[,，、\s]+/);
@@ -434,7 +434,7 @@
 
                         if (newTasks.length > 0) {
                             state.pickingTasks = newTasks;
-                            state.listName = `补仓任务单`;
+                            state.listName = `缺件补发任务单`;
                             state.modelsPreloaded = false;
                             state.isPreloading = false;
                             state.preloadProgress = 0;
@@ -444,7 +444,7 @@
                             updateUI();
                         }
                     } else {
-                        alert('⚠️ 任务描述格式不正确，未找到类似 补仓【...】 的信息！');
+                        alert('⚠️ 任务描述格式不正确，未找到类似 缺件【...】 的信息！');
                         updateUI();
                     }
                 } else {
@@ -1243,18 +1243,7 @@
 
             if (sdID) {
                 try {
-                    const p1 = fetch(API_ENDPOINT, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({
-                            action: 'updateRecord',
-                            BitableUUID: 'BitableUUID085',
-                            filter: { conjunction: "and", conditions: [{ field_name: "关联任务", operator: "is", value: [sdID] }] },
-                            fields: { "完成情况": "已完成" }
-                        })
-                    });
-                    
-                    const p2 = fetch(API_ENDPOINT, {
+                    await fetch(API_ENDPOINT, {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({
@@ -1265,8 +1254,7 @@
                         })
                     });
 
-                    await Promise.all([p1, p2]);
-                    alert("✅ 云端归档已完成！关联任务与任务ID均已标记为已完成。");
+                    alert("✅ 云端归档已完成！任务状态已更新。");
                 } catch (e) {
                     console.error("Archive Error:", e);
                     alert("❌ 云端更新失败，请检查网络！");
