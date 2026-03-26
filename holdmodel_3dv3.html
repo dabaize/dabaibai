@@ -12,40 +12,6 @@
     
     <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
-    
-    <!-- Lucide Icons -->
-    <script src="https://unpkg.com/lucide@latest"></script>
-
-    <!-- Core Libraries -->
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/tween.js/18.6.4/tween.umd.js"></script>
-
-    <!-- 顺序依赖加载器 (包含 Three.js 及周边扩展) -->
-    <script>
-        (function() {
-            const scripts = [
-                "https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js",
-                "https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js",
-                "https://cdn.jsdelivr.net/npm/fflate@0.8.2/umd/index.js",
-                "https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/OBJLoader.js",
-                "https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/FBXLoader.js"
-            ];
-            
-            let i = 0;
-            function loadNext() {
-                if (i >= scripts.length) {
-                    window.dispatchEvent(new Event('WMSDepsLoaded'));
-                    return;
-                }
-                const s = document.createElement('script');
-                s.src = scripts[i++];
-                s.onload = loadNext;
-                document.head.appendChild(s);
-            }
-            loadNext();
-        })();
-    </script>
-
     <script>
         tailwind.config = {
             theme: {
@@ -61,16 +27,59 @@
             }
         }
     </script>
+    
+    <!-- Lucide Icons -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+
+    <!-- Core Libraries -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/tween.js/18.6.4/tween.umd.js"></script>
+
+    <!-- 顺序依赖加载器 (加入错误容错与稳定 CDN 替换) -->
+    <script>
+        (function() {
+            const scripts = [
+                "https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js",
+                "https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js",
+                "https://unpkg.com/fflate@0.8.2/umd/index.js",
+                "https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/OBJLoader.js",
+                "https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/FBXLoader.js"
+            ];
+            
+            let i = 0;
+            function loadNext() {
+                if (i >= scripts.length) {
+                    window.dispatchEvent(new Event('WMSDepsLoaded'));
+                    return;
+                }
+                const s = document.createElement('script');
+                s.src = scripts[i];
+                s.onload = () => { i++; loadNext(); };
+                // 异常处理：防止一个库的超时卡死整个应用
+                s.onerror = () => { console.warn('Failed to load external dependency:', s.src); i++; loadNext(); };
+                document.head.appendChild(s);
+            }
+            loadNext();
+        })();
+    </script>
 
     <style>
-        /* 极致的基础设定与滚动控制 */
-        body { 
+        /* 极致的基础设定与滚动控制 (修复高度塌陷问题) */
+        html, body {
+            width: 100%;
+            height: 100%;
+            margin: 0;
+            padding: 0;
             background-color: #fafafa; 
             overflow: hidden; 
             overscroll-behavior-y: none; 
             -webkit-font-smoothing: antialiased;
             -moz-osx-font-smoothing: grayscale;
             text-rendering: optimizeLegibility;
+        }
+
+        @supports (height: 100dvh) {
+            body { height: 100dvh; }
         }
         
         .no-scrollbar::-webkit-scrollbar { display: none; }
@@ -81,14 +90,12 @@
 
         /* 3D 柜体容器 */
         #cabinet-wall-container {
-    width: 120vw; height: 120vh;
-    position: absolute; left: -10vw; top: -10vh; 
-    transform-style: preserve-3d;
-    will-change: transform;
-    backface-visibility: hidden;
-    -webkit-backface-visibility: hidden; /* 新增: 强制 Safari 硬件加速 */
-    transform: translateZ(0);            /* 新增: 强制 GPU 渲染层 */
-}
+            width: 120vw; height: 120vh;
+            position: absolute; left: -10vw; top: -10vh; 
+            transform-style: preserve-3d;
+            transform: rotateX(8deg) rotateY(-18deg) translateZ(-50px) translateY(0vh);
+            will-change: transform; 
+        }
 
         .cabinet-grid { 
             display: grid; 
@@ -188,11 +195,11 @@
         }
     </style>
 </head>
-<body class="h-[100dvh] w-screen flex relative select-none">
+<body class="w-screen h-screen flex relative select-none">
 
     <!-- 代码生成更新时间戳 -->
     <div class="fixed bottom-3 right-4 z-[9999] text-[10px] font-mono text-slate-400/60 pointer-events-none select-none tracking-wider">
-        Build: 2026-03-26 21:16 CST
+        Build: 2026-03-27 12:40 CST
     </div>
 
     <!-- 隐藏的文件上传域 -->
@@ -299,9 +306,9 @@
                 </div>
             </div>
 
-            <!-- 3D Hologram 视图：纯包裹器，将事件控制权还给 Canvas，移除了会导致 Bug 的覆盖层 -->
+            <!-- 3D Hologram 视图 -->
             <div id="layer2-3d-hologram" class="absolute inset-0 z-30 flex items-center justify-center overflow-hidden dynamic-ui pointer-events-none touch-none">
-                <!-- 纯视觉高亮底圈，用于计算命中区域（无交互拦截能力） -->
+                <!-- 纯视觉高亮底圈 -->
                 <div id="visual-holo-ring" class="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-[85vw] max-w-[420px] h-[85vw] max-h-[420px] z-10 pointer-events-none rounded-full bg-white/[0.02] border border-white/10 shadow-[inset_0_0_20px_rgba(255,255,255,0.03)] backdrop-blur-[1px]"></div>
                 <!-- 核心修复：允许 Canvas 本身响应交互事件 -->
                 <div id="part-3d-viewer" class="w-full h-full z-20 pointer-events-auto"></div>
@@ -373,7 +380,7 @@
             t.className = `fixed top-12 left-1/2 -translate-x-1/2 px-6 py-4 rounded-full font-bold text-[13px] shadow-[0_20px_40px_rgba(0,0,0,0.1),inset_0_1px_1px_rgba(255,255,255,1)] z-[9999] transition-all duration-500 transform translate-y-[-30px] opacity-0 flex items-center gap-3 backdrop-blur-2xl ${isError ? 'bg-red-50/90 text-red-600 border border-red-200/50' : 'bg-white/90 text-slate-800 border border-white/60'}`;
             t.innerHTML = `${isError ? '<i data-lucide="triangle-alert" class="w-4 h-4"></i>' : '<i data-lucide="info" class="w-4 h-4 text-slate-500"></i>'} <span>${msg}</span>`;
             document.body.appendChild(t);
-            lucide.createIcons();
+            if (window.lucide) lucide.createIcons();
             requestAnimationFrame(() => { t.classList.remove('translate-y-[-30px]', 'opacity-0'); t.classList.add('translate-y-0', 'opacity-100'); });
             setTimeout(() => {
                 t.classList.remove('translate-y-0', 'opacity-100'); t.classList.add('translate-y-[-30px]', 'opacity-0');
@@ -396,7 +403,7 @@
         let SharedTextTexture, SharedTextMat, SharedPlaneGeo, SharedBoxGeo, SharedBoxMat;
 
         const initThreeGlobals = () => {
-            if(SharedTextTexture) return;
+            if(SharedTextTexture || typeof THREE === 'undefined') return;
             SharedTextTexture = new THREE.CanvasTexture(TextCanvas);
             SharedTextTexture.anisotropy = 4; SharedTextTexture.minFilter = THREE.LinearFilter;
             SharedTextMat = new THREE.MeshBasicMaterial({ map: SharedTextTexture, transparent: true, alphaTest: 0.1, side: THREE.DoubleSide });
@@ -417,8 +424,6 @@
             TextCtx.fillStyle = gradient; TextCtx.fillText(text, 256, 64);
             if(SharedTextTexture) SharedTextTexture.needsUpdate = true;
         };
-
-        const formatCabinetId = (id) => id.replace('S-', '小柜').replace('L-', '大柜');
 
         const generateCabinets = () => {
             const cabinets = [];
@@ -500,7 +505,7 @@
             btn.disabled = true;
             btn.innerHTML = `<i data-lucide="loader-2" class="w-4 h-4 animate-spin"></i> 模型数据建立中...`;
             btn.classList.replace('hover:-translate-y-0.5', 'opacity-80');
-            lucide.createIcons();
+            if (window.lucide) lucide.createIcons();
 
             const uniqueParts = [...new Set(state.pickingTasks.map(t => t.partName))];
             const total = uniqueParts.length;
@@ -529,7 +534,7 @@
             btn.classList.replace('bg-indigo-50', 'bg-emerald-50');
             btn.classList.replace('text-brand-600', 'text-emerald-600');
             btn.classList.replace('border-indigo-100', 'border-emerald-100');
-            lucide.createIcons();
+            if (window.lucide) lucide.createIcons();
             
             showToast("所有模型已预先缓存，作业过程将获得极致顺滑体验！");
         };
@@ -553,9 +558,13 @@
             return window.GlobalModelIdCache[partName] || null;
         };
 
-        const loadModelAsset = (url, type) => new Promise((resolve, reject) => new (type === 'obj' ? THREE.OBJLoader : THREE.FBXLoader)().load(url, resolve, undefined, reject));
+        const loadModelAsset = (url, type) => new Promise((resolve, reject) => {
+            if(typeof THREE === 'undefined') { reject("Three.js not loaded"); return; }
+            new (type === 'obj' ? THREE.OBJLoader : THREE.FBXLoader)().load(url, resolve, undefined, reject);
+        });
 
         const processRawModel = (rawModel, partName) => {
+            if(typeof THREE === 'undefined') return new THREE.Group();
             const baseColors = [0x6366f1, 0x10b981, 0xf43f5e, 0xf59e0b, 0x8b5cf6, 0x0ea5e9];
             let hash = 0; for (let j = 0; j < partName.length; j++) hash = partName.charCodeAt(j) + ((hash << 5) - hash);
             const customMat = new THREE.MeshStandardMaterial({ color: baseColors[Math.abs(hash) % baseColors.length], metalness: 0.2, roughness: 0.1, clearcoat: 0.8 });
@@ -575,13 +584,7 @@
             
             if (maxDim > 0 && isFinite(maxDim)) {
                 let targetSize;
-                if (maxDim > 10.0) {
-                    targetSize = 4.0;
-                } else if (maxDim < 0.2) {
-                    targetSize = 1.2; 
-                } else {
-                    targetSize = Math.sqrt(maxDim) * 1.8; 
-                }
+                if (maxDim > 10.0) { targetSize = 4.0; } else if (maxDim < 0.2) { targetSize = 1.2; } else { targetSize = Math.sqrt(maxDim) * 1.8; }
                 wrapper.scale.setScalar(targetSize / maxDim);
             }
             return wrapper;
@@ -595,29 +598,31 @@
         let wallContainerEl = null;
 
         function init3DPartViewer() {
+            if (typeof THREE === 'undefined') return;
             const container = document.getElementById('part-3d-viewer');
             wallContainerEl = document.getElementById('cabinet-wall-container');
             if (!container) return;
+            
+            // 【核心修复】：解决因父级 hidden 导致获取高宽为 0，引发 Camera 计算 NaN 崩溃的致命错误。
+            const cWidth = container.clientWidth || window.innerWidth;
+            const cHeight = container.clientHeight || window.innerHeight;
+
             viewer3D.scene = new THREE.Scene();
-            viewer3D.camera = new THREE.PerspectiveCamera(35, container.clientWidth / container.clientHeight, 0.1, 100);
+            viewer3D.camera = new THREE.PerspectiveCamera(35, cWidth / cHeight, 0.1, 100);
             viewer3D.camera.position.set(0, 3.5, 20); 
             viewer3D.renderer = new THREE.WebGLRenderer({ alpha: true, antialias: true });
-            viewer3D.renderer.setSize(container.clientWidth, container.clientHeight);
+            viewer3D.renderer.setSize(cWidth, cHeight);
             viewer3D.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
             container.appendChild(viewer3D.renderer.domElement);
             
-            // 核心修复：将交互控制器彻底绑定到原生的 Canvas 渲染层上，免疫一切穿透 Bug
-            viewer3D.controls = new THREE.OrbitControls(viewer3D.camera, viewer3D.renderer.domElement);
-            viewer3D.controls.enableDamping = true; viewer3D.controls.dampingFactor = 0.05;
-            
-            viewer3D.controls.minDistance = 8; 
-            viewer3D.controls.maxDistance = 50; 
-            
-            viewer3D.controls.enablePan = false; 
-            viewer3D.controls.enableZoom = true;
-            viewer3D.controls.enableRotate = true;
-            viewer3D.controls.autoRotate = true;
-            viewer3D.controls.autoRotateSpeed = 1.0;
+            if(THREE.OrbitControls) {
+                viewer3D.controls = new THREE.OrbitControls(viewer3D.camera, viewer3D.renderer.domElement);
+                viewer3D.controls.enableDamping = true; viewer3D.controls.dampingFactor = 0.05;
+                viewer3D.controls.minDistance = 8; viewer3D.controls.maxDistance = 50; 
+                viewer3D.controls.enablePan = false; viewer3D.controls.enableZoom = true;
+                viewer3D.controls.enableRotate = true; viewer3D.controls.autoRotate = true;
+                viewer3D.controls.autoRotateSpeed = 1.0;
+            }
 
             viewer3D.scene.add(new THREE.AmbientLight(0xffffff, 0.9));
             const dir = new THREE.DirectionalLight(0xffffff, 0.6); dir.position.set(5, 10, 7); viewer3D.scene.add(dir); 
@@ -651,7 +656,7 @@
         }
 
         const render3DPreviewAsync = async (partName, initialQty, isShortage, direction = 'up') => {
-            if (!partName) return;
+            if (!partName || typeof THREE === 'undefined') return;
             if (!viewer3D.scene) init3DPartViewer();
             if (!viewer3D.scene) return;
 
@@ -754,7 +759,7 @@
         };
 
         const update3DQuantity = (qty, isShortage) => {
-            if (viewer3D.activeWrapper && viewer3D.labelGroup) {
+            if (viewer3D.activeWrapper && viewer3D.labelGroup && typeof TWEEN !== 'undefined') {
                 updateVolumetricText(`${viewer3D.currentPart}  x  ${qty}`, isShortage);
                 viewer3D.labelGroup.scale.setScalar(0.6); 
                 new TWEEN.Tween(viewer3D.labelGroup.scale).to({ x: 1, y: 1, z: 1 }, 600).easing(TWEEN.Easing.Elastic.Out).start();
@@ -901,7 +906,7 @@
             const task = state.pickingTasks[taskIndex]; if(!task) return;
             const cab = CABINETS.find(c => c.id === task.cabinetId); if (!cab) return;
             const layerEl = document.getElementById(`swipe-layer-${layerId}`);
-            if (layerEl) { layerEl.innerHTML = `<div class="cabinet-grid" style="grid-template-rows: repeat(${cab.rows}, 1fr); grid-template-columns: repeat(${cab.cols}, 1fr);">${generateGridHTML(cab, taskIndex)}</div>`; lucide.createIcons(); }
+            if (layerEl) { layerEl.innerHTML = `<div class="cabinet-grid" style="grid-template-rows: repeat(${cab.rows}, 1fr); grid-template-columns: repeat(${cab.cols}, 1fr);">${generateGridHTML(cab, taskIndex)}</div>`; if (window.lucide) lucide.createIcons(); }
         }
 
         const toggleSidebar = () => {
@@ -921,7 +926,7 @@
                 backdrop.classList.add('opacity-0');
                 setTimeout(() => backdrop.classList.add('hidden'), 500);
             }
-            lucide.createIcons();
+            if (window.lucide) lucide.createIcons();
         };
 
         const updateMapBtnIcon = () => {
@@ -933,7 +938,7 @@
                 btn.innerHTML = `<i data-lucide="map" class="w-5 h-5 group-active:scale-90 transition-transform"></i>`;
                 btn.className = "fixed top-5 right-4 sm:top-6 sm:right-6 z-[100] w-12 h-12 rounded-[1.2rem] bg-white/80 backdrop-blur-2xl border border-white/60 shadow-[0_12px_40px_-8px_rgba(0,0,0,0.08),inset_0_1px_1px_rgba(255,255,255,1)] flex items-center justify-center text-slate-700 hover:shadow-[0_16px_50px_-10px_rgba(0,0,0,0.12)] hover:-translate-y-1 transition-all duration-500 ease-[cubic-bezier(0.16,1,0.3,1)] pointer-events-auto group interactive-btn";
             }
-            lucide.createIcons();
+            if (window.lucide) lucide.createIcons();
         };
 
         const switchMainView = (viewName) => {
@@ -996,7 +1001,7 @@
                 if (viewer3D.currentPart !== task.partName) { viewer3D.currentPart = task.partName; render3DPreviewAsync(task.partName, task.quantity, isShortage, direction); } 
                 else { update3DQuantity(task.quantity, isShortage); }
             }
-            lucide.createIcons(); if (state.mainView === 'cabinet') setTimeout(adjustCabinetWallPosition, 50);
+            if (window.lucide) lucide.createIcons(); if (state.mainView === 'cabinet') setTimeout(adjustCabinetWallPosition, 50);
         };
 
         const adjustQuantity = (delta) => { if (!state.isGuiding || !state.pickingTasks.length) return; state.pickingTasks[state.currentTaskIndex].quantity = Math.max(0, state.pickingTasks[state.currentTaskIndex].quantity + delta); updateUI('none'); };
@@ -1014,7 +1019,7 @@
             switchMainView('map'); document.getElementById('map-container').classList.add('blur-lg');
             
             const overlay = document.getElementById('job-log-overlay'), modal = document.getElementById('job-log-modal');
-            overlay.classList.remove('hidden'); setTimeout(() => { overlay.classList.remove('opacity-0'); modal.classList.remove('scale-95'); lucide.createIcons(); }, 50);
+            overlay.classList.remove('hidden'); setTimeout(() => { overlay.classList.remove('opacity-0'); modal.classList.remove('scale-95'); if (window.lucide) lucide.createIcons(); }, 50);
         };
 
         const exportLogToExcel = () => {
@@ -1077,7 +1082,7 @@
 
             if (isSameCab) {
                 const cabEl = document.getElementById('swipe-layer-current')?.querySelector('.cabinet-grid');
-                if(cabEl) { cabEl.innerHTML = generateGridHTML(CABINETS.find(c=>c.id===nextT.cabinetId), targetIndex); renderNavPath('current', targetIndex); lucide.createIcons(); }
+                if(cabEl) { cabEl.innerHTML = generateGridHTML(CABINETS.find(c=>c.id===nextT.cabinetId), targetIndex); renderNavPath('current', targetIndex); if (window.lucide) lucide.createIcons(); }
                 setTimeout(()=>document.getElementById('task-list-container').querySelector('#active-task-item')?.scrollIntoView({behavior:'smooth',block:'center'}), 100);
                 state.isAnimating = false;
             } else {
@@ -1107,130 +1112,132 @@
 
         let initialBeta = null; 
 
-       // --- 新增防抖变量声明 ---
-let lastGyroTime = 0;
-const GYRO_THROTTLE = 16; // 约 60fps
-let initialBeta = null;
+        const handleDeviceOrientation = (e) => {
+            if (state.mainView !== 'cabinet' || !e.gamma || !e.beta) return;
+            
+            let gamma = e.gamma; 
+            let beta = e.beta;   
+            
+            if (initialBeta === null) initialBeta = beta;
+            
+            gamma = Math.max(-60, Math.min(60, gamma));
+            let betaDiff = beta - initialBeta;
+            if (betaDiff > 180) betaDiff -= 360; else if (betaDiff < -180) betaDiff += 360;
+            betaDiff = Math.max(-60, Math.min(60, betaDiff));
+            
+            const rx = gamma / 25;
+            const ry = betaDiff / 25;
+            
+            const rawY = -18 + rx * 45; 
+            const rawX = 8 - ry * 35; 
+            
+            targetWallRotY = Math.max(-40, Math.min(4, rawY)); 
+            targetWallRotX = Math.max(-10, Math.min(26, rawX)); 
+        };
 
-const handleDeviceOrientation = (e) => {
-    if (state.mainView !== 'cabinet' || !e.gamma || !e.beta) return;
-    const now = Date.now();
-    if (now - lastGyroTime < GYRO_THROTTLE) return; // 节流控制
-    lastGyroTime = now;
+        const adjustCabinetWallPosition = () => {
+            const nextLayer = document.getElementById('swipe-layer-next');
+            const activeCell = (nextLayer && !nextLayer.classList.contains('hidden')) ? nextLayer.querySelector('.grid-cell.active') : document.querySelector('#swipe-layer-current .grid-cell.active');
+            if (!activeCell) return;
+            const cabGrid = activeCell.closest('.cabinet-grid'); if(!cabGrid) return;
 
-    let gamma = Math.max(-60, Math.min(60, e.gamma));
-    let beta = e.beta;
-    
-    if (initialBeta === null) initialBeta = beta;
-    
-    let betaDiff = beta - initialBeta;
-    if (betaDiff > 180) betaDiff -= 360;
-    else if (betaDiff < -180) betaDiff += 360;
-    
-    betaDiff = Math.max(-60, Math.min(60, betaDiff));
+            const relativeX = (activeCell.offsetLeft + activeCell.offsetWidth / 2) / cabGrid.offsetWidth;
+            const relativeY = (activeCell.offsetTop + activeCell.offsetHeight / 2) / cabGrid.offsetHeight;
+            const isMobile = window.innerWidth < 768;
+            
+            // Y 轴平移算法
+            const panRangeY = isMobile ? 130 : 60; 
+            const baseOffsetY = isMobile ? -10 : 0; 
+            targetWallOffsetY = (0.5 - relativeY) * panRangeY + baseOffsetY; 
+            
+            // X 轴平移算法：强制补偿，让不在中间的格子也被推到视野正中心区
+            const panRangeX = isMobile ? 120 : 40; 
+            targetWallOffsetX = (0.5 - relativeX) * panRangeX; 
+        };
 
-    // 更平滑的映射 + 增加阻尼
-    targetWallRotY = -18 + (gamma / 22) * 48;
-    targetWallRotX = 8 - (betaDiff / 22) * 38;
+        const jumpHologramPosition = () => {
+            const nextLayer = document.getElementById('swipe-layer-next');
+            const activeCell = (nextLayer && !nextLayer.classList.contains('hidden')) ? nextLayer.querySelector('.grid-cell.active') : document.querySelector('#swipe-layer-current .grid-cell.active');
+            if (!activeCell) return;
+            const cabGrid = activeCell.closest('.cabinet-grid'); if(!cabGrid) return;
 
-    // 限制最终角度范围，防止过度翻转
-    targetWallRotY = Math.max(-42, Math.min(6, targetWallRotY));
-    targetWallRotX = Math.max(-12, Math.min(28, targetWallRotX));
-};
+            const relativeX = (activeCell.offsetLeft + activeCell.offsetWidth / 2) / cabGrid.offsetWidth;
+            const relativeY = (activeCell.offsetTop + activeCell.offsetHeight / 2) / cabGrid.offsetHeight;
+            const holoEl = document.getElementById('layer2-3d-hologram');
+            if (!holoEl) return;
+            
+            const viewW = window.innerWidth;
+            const isMobile = viewW < 768;
+            
+            let targetX = 0;
+            let targetY = 0;
+            
+            if (isMobile) {
+                targetX = relativeX < 0.5 ? (viewW * 0.15) : (-viewW * 0.15);
+                targetY = relativeY < 0.5 ? (window.innerHeight * 0.28) : (-window.innerHeight * 0.28);
+                holoEl.style.setProperty('--anim-scale', '0.55');
+            } else {
+                targetX = relativeX < 0.5 ? (viewW * 0.22) : (-viewW * 0.22);
+                targetY = 0;
+                holoEl.style.setProperty('--anim-scale', '1');
+            }
+            
+            holoEl.style.transition = 'none';
+            holoEl.style.setProperty('--ui-x', `${targetX}px`);
+            holoEl.style.setProperty('--ui-y', `${targetY}px`);
+            
+            void holoEl.offsetWidth; 
+            
+            holoEl.style.transition = 'transform 0.6s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.4s ease-out';
+        };
 
-     const adjustCabinetWallPosition = () => {
-    const activeCell = document.querySelector('.grid-cell.active');
-    if (!activeCell) return;
-    const cabGrid = activeCell.closest('.cabinet-grid');
-    if (!cabGrid) return;
-    
-    const rect = cabGrid.getBoundingClientRect();
-    const cellRect = activeCell.getBoundingClientRect();
+        const setupInteractions = () => {
+            const view3D = document.getElementById('view-3d-picking');
+            
+            window.addEventListener('mousemove', e => {
+                if (state.mainView !== 'cabinet') return;
+                const rx = (e.clientX / window.innerWidth - 0.5) * 2; 
+                const ry = (e.clientY / window.innerHeight - 0.5) * 2;
+                
+                targetWallRotY = Math.max(-35, Math.min(0, -18 + rx * 25));
+                targetWallRotX = Math.max(-5, Math.min(25, 8 - ry * 20)); 
+            });
 
-    // 计算高亮格子在整个柜子网格中的相对中心位置
-    const relX = (cellRect.left + cellRect.width / 2 - rect.left) / rect.width;
-    const relY = (cellRect.top + cellRect.height / 2 - rect.top) / rect.height;
+            const preventCheck = (e) => e.target.closest('button') || e.target.closest('#main-sidebar') || e.target.closest('#cabinet-pipeline');
 
-    const isMobile = window.innerWidth < 768;
-    // ==== 强制居中算法（更大补偿）====
-    const targetOffsetX = (0.5 - relX) * (isMobile ? 180 : 90);
-    const targetOffsetY = (0.5 - relY) * (isMobile ? 220 : 110);
-
-    targetWallOffsetX = targetOffsetX;
-    targetWallOffsetY = targetOffsetY;
-    
-    // 同步触发全息投影居中
-    if (typeof jumpHologramPosition === 'function') {
-        jumpHologramPosition();
-    }
-};
-
-const jumpHologramPosition = () => {
-    const activeCell = document.querySelector('.grid-cell.active');
-    if (!activeCell) return;
-    const cabGrid = activeCell.closest('.cabinet-grid');
-    if (!cabGrid) return;
-    
-    const rect = cabGrid.getBoundingClientRect();
-    const cellRect = activeCell.getBoundingClientRect();
-    
-    const relX = (cellRect.left + cellRect.width / 2 - rect.left) / rect.width;
-    const relY = (cellRect.top + cellRect.height / 2 - rect.top) / rect.height;
-    
-    const holoEl = document.getElementById('layer2-3d-hologram');
-    if (!holoEl) return;
-    
-    const isMobile = window.innerWidth < 768;
-    const viewW = window.innerWidth;
-    const viewH = window.innerHeight;
-    
-    // 3D 模型也强制跟随高亮格子居中
-    const targetX = (0.5 - relX) * (isMobile ? viewW * 0.75 : viewW * 0.45);
-    const targetY = (0.5 - relY) * (isMobile ? viewH * 0.45 : 0);
-    
-    holoEl.style.transition = 'none';
-    holoEl.style.setProperty('--ui-x', `${targetX}px`);
-    holoEl.style.setProperty('--ui-y', `${targetY}px`);
-    holoEl.style.setProperty('--anim-scale', isMobile ? '0.65' : '1');
-    
-    // 触发重绘
-    void holoEl.offsetWidth;
-    holoEl.style.transition = 'transform 0.6s cubic-bezier(0.16, 1, 0.3, 1)';
-};
-      const setupInteractions = () => {
-    const view3D = document.getElementById('view-3d-picking');
-    if (!view3D) return;
-
-    // 彻底放开 3D 模型交互区（不再依赖小光环）
-    view3D.addEventListener('touchstart', (e) => {
-        if (state.mainView !== 'cabinet') return;
-        // 只要在 3D 视图内，就强制启用 OrbitControls
-        if (viewer3D.controls) viewer3D.controls.enabled = true;
-    }, { passive: true });
-
-    view3D.addEventListener('touchend', (e) => {
-        if (state.mainView !== 'cabinet') return;
-        const dy = (e.changedTouches[0].clientY - (e.touches?.[0]?.clientY || e.changedTouches[0].clientY)) || 0;
-        const dx = Math.abs(e.changedTouches[0].clientX - (e.touches?.[0]?.clientX || 0));
-        const dt = Date.now() - (window.lastTouchStartTime || 0);
-
-        // 上下滑动翻页（保留原有翻页逻辑）
-        if (dt < 500 && Math.abs(dy) > 80 && Math.abs(dy) > dx * 1.6) {
-            if (dy > 0) prevGuidanceStep();
-            else nextGuidanceStep();
-        }
-    }, { passive: true });
-
-    // 确保 Canvas 本身能接收所有事件
-    const canvasObserver = new MutationObserver(() => {
-        const canvas = viewer3D.renderer?.domElement;
-        if (canvas) canvas.style.pointerEvents = 'auto';
-    });
-    const part3DViewer = document.getElementById('part-3d-viewer');
-    if (part3DViewer) {
-        canvasObserver.observe(part3DViewer, { childList: true });
-    }
-};
+            let touchStartY = 0, touchStartX = 0, touchStartTime = 0;
+            let isTouchingModelZone = false;
+            
+            view3D.addEventListener('touchstart', e => { 
+                touchStartY = e.touches[0].clientY; 
+                touchStartX = e.touches[0].clientX; 
+                touchStartTime = Date.now();
+                
+                // 核心修复：纯 JS 几何碰撞检测，完美免疫一切 DOM 透明层叠带来的触摸丢失 Bug
+                const visualRing = document.getElementById('visual-holo-ring');
+                if (visualRing) {
+                    const rect = visualRing.getBoundingClientRect();
+                    const centerX = rect.left + rect.width / 2;
+                    const centerY = rect.top + rect.height / 2;
+                    
+                    // 将交互热区物理半径扩大 1.8 倍，极大地提升选中 3D 模型的容错率
+                    const radius = (rect.width / 2) * 1.8;
+                    
+                    const distSq = Math.pow(touchStartX - centerX, 2) + Math.pow(touchStartY - centerY, 2);
+                    
+                    if (distSq <= radius * radius) {
+                        // 在光环内：开启 3D 旋转控制
+                        isTouchingModelZone = true;
+                        if(viewer3D.controls) viewer3D.controls.enabled = true;
+                    } else {
+                        // 在光环外：临时剥夺 3D 旋转控制权，防止空白处的误触旋转
+                        isTouchingModelZone = false;
+                        if(viewer3D.controls) viewer3D.controls.enabled = false;
+                    }
+                } else {
+                    isTouchingModelZone = false;
+                }
+            }, {passive: true});
             
             view3D.addEventListener('touchend', e => {
                 // 恢复 3D 引擎的控制权
@@ -1255,7 +1262,7 @@ const jumpHologramPosition = () => {
                     }
                 }
             }, {passive: true});
-        
+        };
 
         const initApp = () => {
             if (viewer3D.scene) return; 
@@ -1268,6 +1275,7 @@ const jumpHologramPosition = () => {
             tweenUpdate();
         };
 
+        // 事件监听：等待外部依赖就绪后挂载核心逻辑
         window.addEventListener('WMSDepsLoaded', () => {
             if (document.readyState === 'loading') {
                 document.addEventListener('DOMContentLoaded', initApp);
@@ -1275,6 +1283,12 @@ const jumpHologramPosition = () => {
                 initApp();
             }
         });
+
+        // 极限容错：如果依赖长时间加载不完，依然尽力展示能渲染的部分
+        setTimeout(() => {
+            if (!viewer3D.scene) initApp();
+        }, 3000);
+
     </script>
 </body>
 </html>
