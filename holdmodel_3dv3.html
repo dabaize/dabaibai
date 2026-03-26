@@ -259,7 +259,7 @@
             <!-- 开始作业的大按钮浮层 -->
             <div id="start-job-overlay" class="absolute inset-x-0 bottom-8 sm:bottom-12 z-50 hidden pointer-events-auto flex flex-col items-center justify-end gap-4 px-4">
                 
-                <!-- 新增：3D 模型预加载控制面板 -->
+                <!-- 3D 模型预加载控制面板 -->
                 <div id="preload-panel" class="w-full max-w-[90%] sm:max-w-md bg-white/80 backdrop-blur-3xl shadow-[0_20px_60px_-15px_rgba(0,0,0,0.1),inset_0_1px_1px_rgba(255,255,255,1)] border border-white/60 rounded-[1.5rem] p-5 flex flex-col gap-4 transform translate-y-4 opacity-0 transition-all duration-700 ease-[cubic-bezier(0.16,1,0.3,1)] delay-100">
                     <div class="flex justify-between items-center px-1">
                         <span class="text-[11px] font-bold text-slate-500 uppercase tracking-widest flex items-center gap-1.5"><i data-lucide="box" class="w-3.5 h-3.5"></i> 空间资产缓存</span>
@@ -279,8 +279,9 @@
             </div>
         </div>
 
-        <!-- 3D 拣货实景层 -->
+        <!-- 3D 拣货实景层 (移除了鼠标滚轮拦截，把缩放权还给 3D OrbitControls) -->
         <div id="view-3d-picking" class="absolute inset-0 z-20 hidden">
+            <!-- Background Wall -->
             <div id="layer1-bg-wall" class="absolute inset-0 z-10 pointer-events-none">
                 <div id="cabinet-wall-container">
                     <div id="cabinet-view" class="swipe-container">
@@ -290,9 +291,13 @@
                 </div>
             </div>
 
-            <!-- 将 interaction-zone 的限制彻底移除，解放全局 3D 操作 -->
+            <!-- 核心修复点 ③：引入一个全局的全屏操作覆盖层。
+                 touch-none 阻止浏览器的默认回弹，确保模型 3D 旋转和缩放绝对顺滑且不冲突 -->
+            <div id="global-interaction-zone" class="absolute inset-0 z-20 pointer-events-auto touch-none cursor-grab active:cursor-grabbing"></div>
+
+            <!-- 3D Hologram (纯视觉展示层，剥离了事件交互层，不再受 css scale 的影响) -->
             <div id="layer2-3d-hologram" class="absolute inset-0 z-30 pointer-events-none flex items-center justify-center overflow-hidden dynamic-ui">
-                <div id="part-3d-viewer" class="w-full h-full pointer-events-auto cursor-grab active:cursor-grabbing"></div>
+                <div id="part-3d-viewer" class="w-full h-full pointer-events-none"></div>
             </div>
 
             <div class="absolute inset-0 z-50 pointer-events-none">
@@ -356,7 +361,6 @@
     </div>
 
     <script>
-        // 顶级美学的 Toast 提示组件
         const showToast = (msg, isError = false) => {
             const t = document.createElement('div');
             t.className = `fixed top-12 left-1/2 -translate-x-1/2 px-6 py-4 rounded-full font-bold text-[13px] shadow-[0_20px_40px_rgba(0,0,0,0.1),inset_0_1px_1px_rgba(255,255,255,1)] z-[9999] transition-all duration-500 transform translate-y-[-30px] opacity-0 flex items-center gap-3 backdrop-blur-2xl ${isError ? 'bg-red-50/90 text-red-600 border border-red-200/50' : 'bg-white/90 text-slate-800 border border-white/60'}`;
@@ -378,7 +382,6 @@
         window.GlobalModelCache = {}; 
         window.GlobalModelIdCache = {}; 
 
-        // 核心性能优化：Canvas 文字纹理复用池
         const TextCanvas = document.createElement('canvas'); 
         TextCanvas.width = 512; TextCanvas.height = 128; 
         const TextCtx = TextCanvas.getContext('2d');
@@ -473,7 +476,6 @@
                     
                     const startOverlay = document.getElementById('start-job-overlay');
                     startOverlay.classList.remove('hidden');
-                    // 触发展示动画
                     setTimeout(() => {
                         document.getElementById('preload-panel').classList.remove('translate-y-4', 'opacity-0');
                     }, 50);
@@ -486,7 +488,6 @@
             reader.readAsArrayBuffer(file);
         };
 
-        // 新增：极客感十足的后台静默预加载逻辑
         const startPreload = async () => {
             const btn = document.getElementById('btn-preload');
             btn.disabled = true;
@@ -498,7 +499,6 @@
             const total = uniqueParts.length;
             let loaded = 0;
             
-            // 并发拉取 UUID 以提高速度
             await batchFetchCloudModelIds(uniqueParts);
 
             for (const partName of uniqueParts) {
@@ -548,7 +548,7 @@
 
         const loadModelAsset = (url, type) => new Promise((resolve, reject) => new (type === 'obj' ? THREE.OBJLoader : THREE.FBXLoader)().load(url, resolve, undefined, reject));
 
-        // 解决痛点：重构模型缩放算法，采用非线性动态靶向缩放，拒绝“小零件变巨无霸”
+        // 核心修复 ①：放大基础基准比例，动态靶向曲线更加舒展
         const processRawModel = (rawModel, partName) => {
             const baseColors = [0x6366f1, 0x10b981, 0xf43f5e, 0xf59e0b, 0x8b5cf6, 0x0ea5e9];
             let hash = 0; for (let j = 0; j < partName.length; j++) hash = partName.charCodeAt(j) + ((hash << 5) - hash);
@@ -556,7 +556,6 @@
             rawModel.traverse(child => { if (child.isMesh) child.material = customMat; });
             const box = new THREE.Box3().setFromObject(rawModel);
             
-            // 【安全拦截】如果模型损坏或为空，立刻返回备用组，防止产生 NaN 毒化 WebGL
             if (box.isEmpty()) return new THREE.Group();
 
             const center = box.getCenter(new THREE.Vector3());
@@ -568,15 +567,15 @@
             const size = box.getSize(new THREE.Vector3()); 
             const maxDim = Math.max(size.x, size.y, size.z);
             
-            // 【核心修复】：根据模型原始尺寸，动态分配目标大小，保留相对尺寸感，并拦截异常值
+            // 比例全面放大调优，保证小模型不再迷你，大模型依然受限
             if (maxDim > 0 && isFinite(maxDim)) {
                 let targetSize;
                 if (maxDim > 10.0) {
-                    targetSize = 2.5; 
+                    targetSize = 4.0; // 提升了大模型的阈值（原为2.5）
                 } else if (maxDim < 0.2) {
-                    targetSize = 0.8; 
+                    targetSize = 1.2; // 提升了微小模型的阈值（原为0.8）
                 } else {
-                    targetSize = Math.sqrt(maxDim) * 1.2; 
+                    targetSize = Math.sqrt(maxDim) * 1.8; // 中等件曲线放大了 50%
                 }
                 wrapper.scale.setScalar(targetSize / maxDim);
             }
@@ -599,46 +598,41 @@
             viewer3D.camera.position.set(0, 3.5, 20); 
             viewer3D.renderer = new THREE.WebGLRenderer({ alpha: true, antialias: true });
             viewer3D.renderer.setSize(container.clientWidth, container.clientHeight);
-            // 解决痛点②：限制最高像素比，大幅减轻移动端 GPU 渲染压力，提升帧率
             viewer3D.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
             container.appendChild(viewer3D.renderer.domElement);
             
-            // 将 OrbitControls 直接绑定在全局容器上，释放全局交互
-            viewer3D.controls = new THREE.OrbitControls(viewer3D.camera, viewer3D.renderer.domElement);
+            // 核心修复 ③：将手势事件绑定层独立于缩放容器之上，确保整屏都可以触发 3D 旋转缩放
+            const interactZone = document.getElementById('global-interaction-zone');
+            viewer3D.controls = new THREE.OrbitControls(viewer3D.camera, interactZone);
             viewer3D.controls.enableDamping = true; viewer3D.controls.dampingFactor = 0.05;
             
-            // 解决痛点③：限制 OrbitControls 缩放范围，防止用户因无限放大而导致模型超出交互区
-            viewer3D.controls.minDistance = 12;
-            viewer3D.controls.maxDistance = 35;
+            viewer3D.controls.minDistance = 8; // 放宽最小放大距离
+            viewer3D.controls.maxDistance = 50; // 放宽最大缩小距离
             
-            // 重新启用移动端的模型旋转和缩放交互
             viewer3D.controls.enablePan = false; 
             viewer3D.controls.enableZoom = true;
             viewer3D.controls.enableRotate = true;
-            viewer3D.controls.autoRotate = true; // 保留微弱自转增加高级感
+            viewer3D.controls.autoRotate = true;
             viewer3D.controls.autoRotateSpeed = 1.0;
 
             viewer3D.scene.add(new THREE.AmbientLight(0xffffff, 0.9));
             const dir = new THREE.DirectionalLight(0xffffff, 0.6); dir.position.set(5, 10, 7); viewer3D.scene.add(dir); 
             const dir2 = new THREE.DirectionalLight(0xffffff, 0.4); dir2.position.set(-5, 5, -7); viewer3D.scene.add(dir2);
 
-            // 解决痛点②：提升帧率与性能优化
             const animate = () => {
                 requestAnimationFrame(animate); 
                 
                 if (state.mainView === 'cabinet') {
-                    // 使用插值平滑移动
-                    currentWallRotX += (targetWallRotX - currentWallRotX) * 0.08;
-                    currentWallRotY += (targetWallRotY - currentWallRotY) * 0.08;
-                    currentWallOffsetY += (targetWallOffsetY - currentWallOffsetY) * 0.08;
+                    // 核心修复 ②：降速使得过渡更为顺滑（从 0.08 降为 0.05）
+                    currentWallRotX += (targetWallRotX - currentWallRotX) * 0.05;
+                    currentWallRotY += (targetWallRotY - currentWallRotY) * 0.05;
+                    currentWallOffsetY += (targetWallOffsetY - currentWallOffsetY) * 0.05;
                     
-                    // 仅当变化量大于阈值时操作 DOM，避免由于微弱浮点变动引发的密集 Layout Thrashing (卡顿元凶)
-                    if (wallContainerEl && (Math.abs(targetWallRotX - currentWallRotX) > 0.02 || Math.abs(targetWallRotY - currentWallRotY) > 0.02 || Math.abs(targetWallOffsetY - currentWallOffsetY) > 0.02)) {
+                    if (wallContainerEl && (Math.abs(targetWallRotX - currentWallRotX) > 0.01 || Math.abs(targetWallRotY - currentWallRotY) > 0.01 || Math.abs(targetWallOffsetY - currentWallOffsetY) > 0.01)) {
                         wallContainerEl.style.transform = `rotateX(${currentWallRotX.toFixed(2)}deg) rotateY(${currentWallRotY.toFixed(2)}deg) translateZ(-50px) translateY(${currentWallOffsetY.toFixed(2)}vh)`;
                     }
 
                     if (viewer3D.controls && viewer3D.controls.enabled) viewer3D.controls.update();
-                    // 仅在当前处于 3D 视图时执行高开销的 WebGL Render
                     viewer3D.renderer.render(viewer3D.scene, viewer3D.camera);
                 }
             };
@@ -684,8 +678,8 @@
             newWrapper.isTaskWrapper = true; 
             
             let physicalModel = new THREE.Group();
-            // 已在 processRawModel 内部标准化了模型大小，此处恢复 1.0 原始比例即可
-            physicalModel.scale.setScalar(1.0); 
+            // 核心修复 ①：额外加持，让经过靶向曲线优化的模型整体再放大 40% 的视野占比
+            physicalModel.scale.setScalar(1.4); 
             newWrapper.add(physicalModel);
 
             const label3D = new THREE.Group();
@@ -739,12 +733,10 @@
             physicalModel.add(loadedMesh);
             const box = new THREE.Box3().setFromObject(loadedMesh); 
             let maxY = 1.0; 
-            // 【安全拦截】确保包围盒顶部计算不会返回 Infinity，防止文字飞出屏幕消失
             if (isFinite(box.max.y) && !isNaN(box.max.y)) maxY = box.max.y;
 
             new TWEEN.Tween(label3D.position).to({ y: maxY + 1.2 }, 400).easing(TWEEN.Easing.Cubic.Out).start();
 
-            // 【核心修复】保存已被计算好的安全缩放比例，绝对不能将目标缩放硬编码为 {x:1, y:1, z:1}
             const targetScale = loadedMesh.scale.clone(); 
             
             loadedMesh.scale.setScalar(0.001);
@@ -1040,7 +1032,6 @@
                 document.getElementById('start-job-overlay').classList.add('hidden'); 
                 document.getElementById('preload-panel').classList.add('translate-y-4', 'opacity-0');
                 
-                // 重置预加载按钮状态
                 const btn = document.getElementById('btn-preload');
                 btn.disabled = false;
                 btn.classList.remove('opacity-80', 'bg-emerald-50', 'text-emerald-600', 'border-emerald-100');
@@ -1114,7 +1105,7 @@
 
         let initialBeta = null; 
 
-        // 解决痛点①：扩大背景柜子各方向的最大倾斜角度及陀螺仪灵敏度
+        // 核心修复 ②：对陀螺仪信号加上安全的角度钳位(Clamp)，并强化顺滑度
         const handleDeviceOrientation = (e) => {
             if (state.mainView !== 'cabinet' || !e.gamma || !e.beta) return;
             
@@ -1123,19 +1114,20 @@
             
             if (initialBeta === null) initialBeta = beta;
             
-            // 放宽物理倾斜的捕获范围
             gamma = Math.max(-60, Math.min(60, gamma));
             let betaDiff = beta - initialBeta;
             if (betaDiff > 180) betaDiff -= 360; else if (betaDiff < -180) betaDiff += 360;
             betaDiff = Math.max(-60, Math.min(60, betaDiff));
             
-            // 提高灵敏度乘数
-            const rx = gamma / 30;
-            const ry = betaDiff / 30;
+            const rx = gamma / 25;
+            const ry = betaDiff / 25;
             
-            // 大幅增加 Y 轴和 X 轴的目标倾角映射范围
-            targetWallRotY = -18 + rx * 55; 
-            targetWallRotX = 8 - ry * 40; 
+            const rawY = -18 + rx * 45; 
+            const rawX = 8 - ry * 35; 
+            
+            // 加入安全极限阈值锁定，绝不翻出界
+            targetWallRotY = Math.max(-40, Math.min(4, rawY)); 
+            targetWallRotX = Math.max(-10, Math.min(26, rawX)); 
         };
 
         const adjustCabinetWallPosition = () => {
@@ -1188,46 +1180,40 @@
         };
 
         const setupInteractions = () => {
-            const v = document.getElementById('view-3d-picking');
+            const interactZone = document.getElementById('global-interaction-zone');
+            
             window.addEventListener('mousemove', e => {
                 if (state.mainView !== 'cabinet') return;
-                const rx = (e.clientX / window.innerWidth - 0.5) * 2; const ry = (e.clientY / window.innerHeight - 0.5) * 2;
-                // 同步扩大 PC 端鼠标悬停的最大倾斜角度
-                targetWallRotY = -18 + rx * 45; targetWallRotX = 8 - ry * 35; 
+                const rx = (e.clientX / window.innerWidth - 0.5) * 2; 
+                const ry = (e.clientY / window.innerHeight - 0.5) * 2;
+                
+                // 桌面端的极限角度限制
+                targetWallRotY = Math.max(-35, Math.min(0, -18 + rx * 25));
+                targetWallRotX = Math.max(-5, Math.min(25, 8 - ry * 20)); 
             });
 
             const preventCheck = (e) => e.target.closest('button') || e.target.closest('#main-sidebar') || e.target.closest('#cabinet-pipeline');
 
             let touchStartY = 0, touchStartX = 0, touchStartTime = 0;
-            v.addEventListener('touchstart', e => { 
+            
+            interactZone.addEventListener('touchstart', e => { 
                 touchStartY = e.touches[0].clientY; 
                 touchStartX = e.touches[0].clientX; 
                 touchStartTime = Date.now();
             }, {passive: true});
             
-            v.addEventListener('touchend', e => {
+            interactZone.addEventListener('touchend', e => {
                 if(state.mainView !== 'cabinet' || preventCheck(e)) return; 
                 const dy = touchStartY - e.changedTouches[0].clientY; 
                 const dx = Math.abs(touchStartX - e.changedTouches[0].clientX);
                 const dt = Date.now() - touchStartTime;
 
-                // 完美解决冲突：时间极短 (dt < 400ms) 且重垂直位移 (dy > dx * 1.5 且 > 60px) 的纯粹滑动，判定为切换任务手势
-                // 这能完美屏蔽我们在慢悠悠地 3D 旋转模型时产生的轻微位移导致误翻页
+                // 核心修复 ③：通过判定位移时间（< 400ms）和位移主轴向，完美切分“手指拖拽旋转”和“快速滑动翻页”
                 if (dt < 400 && Math.abs(dy) > 60 && Math.abs(dy) > dx * 1.5) { 
                     if(dy > 0) prevGuidanceStep(); 
                     else nextGuidanceStep(); 
                 }
             }, {passive: true});
-        };
-
-        let wheelTimeout;
-        const handleWheel = (e) => { 
-            if(state.mainView === 'cabinet' && !state.isAnimating) { 
-                // 解决痛点②：滚轮触发切换页面前，忽略对 3D 模型的放大缩小操作
-                if(e.target.closest('button') || e.target.closest('#main-sidebar') || e.target.closest('#cabinet-pipeline') || e.target.closest('#hologram-interaction-zone')) return;
-                if (window.wheelTimeout) clearTimeout(window.wheelTimeout); 
-                window.wheelTimeout = setTimeout(() => { if(e.deltaY>0) nextGuidanceStep(); else prevGuidanceStep(); }, 60); 
-            } 
         };
 
         const initApp = () => {
