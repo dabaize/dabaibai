@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
     <title>WMS Pro - 极致玻璃拟态版</title>
     
-    <!-- Fonts -->
+    <!-- 顶级无衬线排版字体 -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;700;900&family=Noto+Sans+SC:wght@400;500;700;900&display=swap" rel="stylesheet">
@@ -20,7 +20,7 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/tween.js/18.6.4/tween.umd.js"></script>
 
-    <!-- Sequential Dependency Loader -->
+    <!-- 顺序依赖加载器 (包含 Three.js 及周边扩展) -->
     <script>
         (function() {
             const scripts = [
@@ -63,8 +63,9 @@
     </script>
 
     <style>
+        /* 极致的基础设定与滚动控制 */
         body { 
-            background-color: #f5f5f7; 
+            background-color: #fafafa; 
             overflow: hidden; 
             overscroll-behavior-y: none; 
             -webkit-font-smoothing: antialiased;
@@ -78,11 +79,13 @@
         .swipe-container { position: absolute; inset: 0; overflow: hidden; perspective: 2000px; transform-style: preserve-3d; }
         .swipe-slide { position: absolute; inset: 0; transform-style: preserve-3d; }
 
+        /* 3D 柜体容器 */
         #cabinet-wall-container {
             width: 120vw; height: 120vh;
             position: absolute; left: -10vw; top: -10vh; 
             transform-style: preserve-3d;
             transform: rotateX(8deg) rotateY(-18deg) translateZ(-50px) translateY(0vh);
+            will-change: transform; /* 性能优化：启用 GPU 硬件加速层 */
         }
 
         .cabinet-grid { 
@@ -97,16 +100,16 @@
             .cabinet-grid { padding: 15vh 12vw 15vh; }
         }
         
-        /* 修复闪烁：移除不稳定的 backface-visibility，增加 will-change */
+        /* 玻璃拟态格子，Vercel 级阴影与透明度 */
         .grid-cell {
-            background: rgba(255, 255, 255, 0.5); 
-            backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px);
+            background: rgba(255, 255, 255, 0.4); 
+            backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);
             border-radius: clamp(8px, 2vw, 16px); 
             display: flex; align-items: center; justify-content: center;
             font-family: 'JetBrains Mono', monospace; 
             font-size: clamp(12px, 3.5vw, 15px); 
             font-weight: 700; color: #94a3b8;
-            box-shadow: 0 10px 30px -10px rgba(0, 0, 0, 0.05), inset 0 1px 0 rgba(255, 255, 255, 0.8);
+            box-shadow: 0 10px 30px -10px rgba(0, 0, 0, 0.05), inset 0 1px 1px rgba(255, 255, 255, 0.9);
             border: 1px solid rgba(255, 255, 255, 0.6);
             transition: all 0.6s cubic-bezier(0.16, 1, 0.3, 1);
             position: relative; z-index: 2; 
@@ -115,12 +118,11 @@
         }
         
         .grid-cell.picked {
-            background: rgba(255, 255, 255, 0.2); color: transparent;
+            background: rgba(255, 255, 255, 0.15); color: transparent;
             box-shadow: inset 0 2px 4px rgba(0,0,0,0.02);
-            border: 1px dashed rgba(148, 163, 184, 0.4); opacity: 0.6; z-index: 1;
+            border: 1px dashed rgba(148, 163, 184, 0.3); opacity: 0.6; z-index: 1;
         }
         
-        /* 修复闪烁：为已完成状态的浮层赋予微小的 Z 偏置 */
         .grid-cell.picked > div.absolute {
             transform: translateZ(1px);
         }
@@ -131,10 +133,11 @@
             transform: translateZ(0); pointer-events: none; opacity: 0;
             will-change: transform;
         }
+        
         .grid-cell.active { background: transparent; box-shadow: none; border-color: transparent; z-index: 50; }
         .grid-cell.active .drawer-box { transform: translateZ(clamp(60px, 15vw, 100px)); opacity: 1; }
         
-        /* 修复闪烁：移除 backface-visibility，明确 translateZ 优先度 */
+        /* Stripe 质感渐变与阴影 */
         .drawer-front {
             position: absolute; inset: 0; 
             background: linear-gradient(135deg, #6366f1, #4f46e5); color: white;
@@ -156,12 +159,13 @@
         @keyframes flowGlow { 0% { stroke-dashoffset: 40; } 100% { stroke-dashoffset: 0; } }
         .flowing-path { animation: flowGlow 1.2s linear infinite; }
 
+        /* 模型交互区：高渲染清晰度 */
         #part-3d-viewer canvas { 
             filter: drop-shadow(0 40px 40px rgba(0,0,0,0.15)); 
             transform-origin: center bottom;
         }
 
-        .sidebar-collapse { transform: translateX(-100%); opacity: 0; }
+        .sidebar-collapse { transform: translateX(-100%); opacity: 0; pointer-events: none; }
         svg text { user-select: none; }
 
         .dynamic-ui {
@@ -173,87 +177,100 @@
             transition: transform 0.6s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.4s ease-out;
         }
         
+        /* 交互微动效 - Linear 风格弹簧压感 */
         .interactive-btn {
-            transition: all 0.5s cubic-bezier(0.16, 1, 0.3, 1);
+            transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1);
         }
         .interactive-btn:active {
-            transform: scale(0.92);
+            transform: scale(0.92) translateY(2px);
         }
-
-        /* 解决触控冲突：移动端彻底穿透 3D 控制区，防止阻挡上下滑动 */
-        @media (max-width: 767px) {
-            #hologram-interaction-zone {
-                pointer-events: none !important;
-            }
+        
+        #hologram-interaction-zone {
+            /* 解决痛点②：移除了 pointer-events: none !important，恢复模型交互 */
+            touch-action: none; 
         }
     </style>
 </head>
 <body class="h-[100dvh] w-screen flex relative select-none">
 
+    <!-- 隐藏的文件上传域 -->
     <input type="file" id="excel-upload" accept=".xlsx, .xls, .csv" class="hidden" onchange="handleExcelUpload(event)">
 
-    <div id="sidebar-backdrop" onclick="toggleSidebar()" class="fixed inset-0 bg-slate-900/20 backdrop-blur-sm z-[85] hidden opacity-0 transition-opacity duration-500 lg:hidden"></div>
+    <!-- 移动端侧边栏遮罩 -->
+    <div id="sidebar-backdrop" onclick="toggleSidebar()" class="fixed inset-0 bg-slate-900/30 backdrop-blur-sm z-[85] hidden opacity-0 transition-opacity duration-500 lg:hidden"></div>
 
-    <button onclick="toggleSidebar()" class="fixed top-5 left-4 sm:top-6 sm:left-6 z-[100] w-11 h-11 sm:w-12 sm:h-12 rounded-[1rem] bg-white/80 backdrop-blur-xl shadow-[0_8px_30px_-4px_rgba(0,0,0,0.05)] border border-white flex items-center justify-center text-slate-700 hover:shadow-[0_12px_40px_-8px_rgba(0,0,0,0.08)] hover:-translate-y-1 transition-all duration-500 ease-[cubic-bezier(0.16,1,0.3,1)] pointer-events-auto group interactive-btn">
+    <!-- 侧边栏 Toggle 按钮 -->
+    <button onclick="toggleSidebar()" class="fixed top-5 left-4 sm:top-6 sm:left-6 z-[100] w-12 h-12 rounded-[1.2rem] bg-white/80 backdrop-blur-2xl shadow-[0_12px_40px_-8px_rgba(0,0,0,0.08),inset_0_1px_1px_rgba(255,255,255,1)] border border-white/60 flex items-center justify-center text-slate-700 hover:shadow-[0_16px_50px_-10px_rgba(0,0,0,0.12)] hover:-translate-y-1 transition-all duration-500 ease-[cubic-bezier(0.16,1,0.3,1)] pointer-events-auto group interactive-btn">
         <i data-lucide="menu" id="sidebar-icon" class="w-5 h-5 group-active:scale-90 transition-transform"></i>
     </button>
 
-    <button id="toggle-map-btn" onclick="toggleMainView()" class="fixed top-5 right-4 sm:top-6 sm:right-6 z-[100] w-11 h-11 sm:w-12 sm:h-12 rounded-[1rem] bg-white/80 backdrop-blur-xl border border-white shadow-[0_8px_30px_-4px_rgba(0,0,0,0.05)] flex items-center justify-center text-slate-700 hover:shadow-[0_12px_40px_-8px_rgba(0,0,0,0.08)] hover:-translate-y-0.5 transition-all duration-500 ease-[cubic-bezier(0.16,1,0.3,1)] pointer-events-auto group interactive-btn">
+    <!-- 视图切换按钮 -->
+    <button id="toggle-map-btn" onclick="toggleMainView()" class="fixed top-5 right-4 sm:top-6 sm:right-6 z-[100] w-12 h-12 rounded-[1.2rem] bg-white/80 backdrop-blur-2xl border border-white/60 shadow-[0_12px_40px_-8px_rgba(0,0,0,0.08),inset_0_1px_1px_rgba(255,255,255,1)] flex items-center justify-center text-slate-700 hover:shadow-[0_16px_50px_-10px_rgba(0,0,0,0.12)] hover:-translate-y-1 transition-all duration-500 ease-[cubic-bezier(0.16,1,0.3,1)] pointer-events-auto group interactive-btn">
         <i data-lucide="map" class="w-5 h-5 group-active:scale-90 transition-transform"></i>
     </button>
 
+    <!-- 空间导航路径指示器 -->
     <div id="cabinet-pipeline" class="fixed top-[4.5rem] sm:top-6 left-1/2 transform -translate-x-1/2 z-[80] flex items-center gap-2 max-w-[90vw] sm:max-w-[65vw] overflow-x-auto no-scrollbar py-2 px-2 opacity-0 pointer-events-none transition-all duration-500"></div>
 
-    <aside id="main-sidebar" class="fixed left-0 top-0 bottom-0 w-[280px] sm:w-[320px] p-5 sm:p-6 pt-20 sm:pt-24 z-[90] bg-white/60 backdrop-blur-3xl border-r border-white shadow-[20px_0_60px_-20px_rgba(0,0,0,0.05)] transition-all duration-500 ease-[cubic-bezier(0.16,1,0.3,1)] sidebar-collapse flex flex-col">
-        <div class="px-2 pb-5 sm:pb-6 flex items-center gap-4 shrink-0">
-            <div class="w-10 h-10 sm:w-12 sm:h-12 rounded-[1rem] sm:rounded-[1.2rem] bg-gradient-to-br from-brand-400 to-brand-600 shadow-[0_12px_24px_-6px_rgba(99,102,241,0.4),inset_0_1px_1px_rgba(255,255,255,0.4)] flex items-center justify-center text-white"><i data-lucide="layers" class="w-5 h-5 sm:w-6 sm:h-6"></i></div>
-            <h1 class="font-black text-xl sm:text-2xl text-slate-900 tracking-tighter">WMS Pro</h1>
+    <!-- 侧边栏列表：高质感毛玻璃 -->
+    <aside id="main-sidebar" class="fixed left-0 top-0 bottom-0 w-[300px] sm:w-[340px] p-5 sm:p-7 pt-24 sm:pt-28 z-[90] bg-white/50 backdrop-blur-3xl border-r border-white/60 shadow-[20px_0_60px_-20px_rgba(0,0,0,0.08)] transition-all duration-500 ease-[cubic-bezier(0.16,1,0.3,1)] sidebar-collapse flex flex-col">
+        <div class="px-2 pb-6 flex items-center gap-4 shrink-0">
+            <div class="w-12 h-12 rounded-[1.2rem] bg-gradient-to-br from-slate-800 to-black shadow-[0_12px_24px_-6px_rgba(0,0,0,0.4),inset_0_1px_1px_rgba(255,255,255,0.2)] flex items-center justify-center text-white">
+                <i data-lucide="layers" class="w-6 h-6"></i>
+            </div>
+            <h1 class="font-black text-2xl text-slate-900 tracking-tighter">WMS Pro</h1>
         </div>
         
-        <div class="px-2 py-3 sm:py-4 mb-4 shrink-0">
+        <div class="px-2 py-4 mb-4 shrink-0">
             <div class="flex justify-between items-end mb-3 text-[10px] font-black text-slate-400 uppercase tracking-widest">
                 <span>总作业进度</span><span class="text-brand-600 font-mono text-xs" id="sidebar-progress-text">0 / 0</span>
             </div>
-            <div class="w-full bg-slate-100/80 shadow-inner h-2.5 rounded-full overflow-hidden p-[2px] border border-slate-200/50">
-                <div id="sidebar-progress-bar" class="bg-gradient-to-r from-brand-400 to-brand-600 h-full rounded-full transition-all duration-500 ease-out shadow-[0_0_10px_rgba(99,102,241,0.5)]" style="width: 0%"></div>
+            <div class="w-full bg-slate-200/50 shadow-inner h-2.5 rounded-full overflow-hidden p-[2px] border border-white/50">
+                <div id="sidebar-progress-bar" class="bg-gradient-to-r from-brand-400 to-brand-600 h-full rounded-full transition-all duration-500 ease-out shadow-[0_0_12px_rgba(99,102,241,0.6)]" style="width: 0%"></div>
             </div>
         </div>
 
-        <div id="task-list-container" class="flex-1 overflow-y-auto no-scrollbar space-y-2.5 sm:space-y-3 px-1 pb-10"></div>
+        <div id="task-list-container" class="flex-1 overflow-y-auto no-scrollbar space-y-3 px-1 pb-10"></div>
     </aside>
 
     <main class="flex-1 h-full relative z-10 flex flex-col overflow-hidden">
-        <div id="view-2d-map" class="absolute inset-0 z-50 bg-[#f5f5f7] flex flex-col items-center justify-center transition-opacity duration-500">
-            <div class="absolute bottom-8 right-4 sm:bottom-10 sm:right-10 z-50 flex flex-col gap-3 sm:gap-4">
-                <button onclick="window.mapFocusCurrent()" class="w-12 h-12 sm:w-14 sm:h-14 bg-white/80 backdrop-blur-xl text-slate-700 rounded-full shadow-[0_8px_30px_-4px_rgba(0,0,0,0.06)] border border-white flex items-center justify-center hover:text-brand-600 hover:-translate-y-1 transition-all duration-500 ease-out pointer-events-auto interactive-btn group" title="重新聚焦"><i data-lucide="crosshair" class="w-5 h-5 group-active:scale-90"></i></button>
-                <div class="flex flex-col bg-white/80 backdrop-blur-xl rounded-[1.2rem] sm:rounded-[1.5rem] shadow-[0_8px_30px_-4px_rgba(0,0,0,0.06)] border border-white overflow-hidden pointer-events-auto">
+        <!-- 2D 鸟瞰地图层 -->
+        <div id="view-2d-map" class="absolute inset-0 z-50 bg-[#fafafa] flex flex-col items-center justify-center transition-opacity duration-500">
+            <!-- 缩放与聚焦浮层控件 -->
+            <div class="absolute bottom-10 right-6 sm:bottom-12 sm:right-12 z-50 flex flex-col gap-4">
+                <button onclick="window.mapFocusCurrent()" class="w-12 h-12 sm:w-14 sm:h-14 bg-white/90 backdrop-blur-2xl text-slate-700 rounded-full shadow-[0_12px_40px_-8px_rgba(0,0,0,0.1),inset_0_1px_1px_rgba(255,255,255,1)] border border-white/60 flex items-center justify-center hover:text-brand-600 hover:-translate-y-1 transition-all duration-500 ease-out pointer-events-auto interactive-btn group" title="重新聚焦"><i data-lucide="crosshair" class="w-5 h-5 group-active:scale-90"></i></button>
+                <div class="flex flex-col bg-white/90 backdrop-blur-2xl rounded-[1.2rem] sm:rounded-[1.5rem] shadow-[0_12px_40px_-8px_rgba(0,0,0,0.1),inset_0_1px_1px_rgba(255,255,255,1)] border border-white/60 overflow-hidden pointer-events-auto">
                     <button onclick="window.mapZoom(1)" class="w-12 h-12 sm:w-14 sm:h-14 flex items-center justify-center text-slate-700 hover:text-brand-600 hover:bg-slate-50/50 transition-all duration-300 group interactive-btn"><i data-lucide="plus" class="w-5 h-5 group-active:scale-90"></i></button>
-                    <div class="w-full h-[1px] bg-slate-100"></div>
+                    <div class="w-full h-[1px] bg-slate-100/50"></div>
                     <button onclick="window.mapZoom(-1)" class="w-12 h-12 sm:w-14 sm:h-14 flex items-center justify-center text-slate-700 hover:text-brand-600 hover:bg-slate-50/50 transition-all duration-300 group interactive-btn"><i data-lucide="minus" class="w-5 h-5 group-active:scale-90"></i></button>
                 </div>
             </div>
+            
             <div id="map-container" class="w-full h-full relative z-10 flex items-center justify-center"></div>
 
-            <div id="empty-state-overlay" class="absolute inset-0 flex items-center justify-center z-20 backdrop-blur-xl bg-[#f5f5f7]/50 transition-all duration-500 pointer-events-auto px-4">
-                <div class="bg-white/80 backdrop-blur-2xl shadow-[0_40px_100px_-20px_rgba(0,0,0,0.08)] border border-white rounded-[2rem] sm:rounded-[2.5rem] p-6 sm:p-10 flex flex-col items-center max-w-[90%] sm:max-w-md w-full hover:-translate-y-2 transition-transform duration-700 ease-[cubic-bezier(0.16,1,0.3,1)]">
-                    <div class="w-16 h-16 sm:w-20 sm:h-20 rounded-[1.5rem] sm:rounded-[1.8rem] bg-indigo-50 shadow-[inset_0_2px_4px_rgba(255,255,255,0.8),_0_10px_20px_-5px_rgba(99,102,241,0.15)] border border-white flex items-center justify-center text-brand-500 mb-6 sm:mb-8">
-                        <i data-lucide="file-spreadsheet" class="w-8 h-8 sm:w-10 sm:h-10"></i>
+            <!-- 极简高质感的空状态浮层 -->
+            <div id="empty-state-overlay" class="absolute inset-0 flex items-center justify-center z-20 backdrop-blur-xl bg-[#fafafa]/60 transition-all duration-500 pointer-events-auto px-4">
+                <div class="bg-white/80 backdrop-blur-3xl shadow-[0_40px_100px_-20px_rgba(0,0,0,0.1),inset_0_1px_1px_rgba(255,255,255,1)] border border-white/60 rounded-[2rem] sm:rounded-[2.5rem] p-8 sm:p-12 flex flex-col items-center max-w-[90%] sm:max-w-md w-full hover:-translate-y-2 transition-transform duration-700 ease-[cubic-bezier(0.16,1,0.3,1)]">
+                    <div class="w-20 h-20 rounded-[1.5rem] bg-gradient-to-b from-indigo-50 to-indigo-100/50 shadow-[inset_0_2px_4px_rgba(255,255,255,0.8),_0_10px_20px_-5px_rgba(99,102,241,0.15)] border border-white flex items-center justify-center text-brand-500 mb-8">
+                        <i data-lucide="file-spreadsheet" class="w-10 h-10"></i>
                     </div>
-                    <h2 class="text-xl sm:text-2xl font-black text-slate-900 mb-2 sm:mb-3 tracking-tighter text-center">导入拣货清单</h2>
-                    <p class="text-[10px] text-slate-400 font-bold mb-8 sm:mb-10 uppercase tracking-widest text-center">请上传带有位置信息的 Excel 文件</p>
-                    <button onclick="document.getElementById('excel-upload').click()" class="w-full bg-slate-900 text-white py-4 sm:py-4.5 rounded-[1rem] sm:rounded-[1.2rem] font-bold text-sm tracking-wide shadow-[0_15px_30px_-10px_rgba(0,0,0,0.3),inset_0_1px_1px_rgba(255,255,255,0.2)] hover:shadow-[0_20px_40px_-12px_rgba(0,0,0,0.4)] hover:-translate-y-1 active:scale-[0.98] transition-all duration-500 flex justify-center items-center gap-2">
+                    <h2 class="text-2xl font-black text-slate-900 mb-3 tracking-tighter text-center">导入拣货清单</h2>
+                    <p class="text-[11px] text-slate-400 font-bold mb-10 uppercase tracking-widest text-center">请上传带有位置信息的 Excel 文件</p>
+                    <button onclick="document.getElementById('excel-upload').click()" class="w-full bg-slate-900 text-white py-4.5 rounded-[1.2rem] font-bold text-sm tracking-wide shadow-[0_15px_30px_-10px_rgba(0,0,0,0.3),inset_0_1px_1px_rgba(255,255,255,0.2)] hover:shadow-[0_20px_40px_-12px_rgba(0,0,0,0.4)] hover:-translate-y-1 active:scale-[0.98] transition-all duration-500 flex justify-center items-center gap-2">
                         <i data-lucide="upload" class="w-4 h-4"></i> 选择并解析文件
                     </button>
                 </div>
             </div>
 
-            <div id="start-job-overlay" class="absolute bottom-8 sm:bottom-16 left-1/2 transform -translate-x-1/2 z-50 hidden pointer-events-auto w-[90%] sm:w-auto flex justify-center">
-                <button onclick="startGuidance()" class="w-full sm:w-auto bg-gradient-to-b from-brand-500 to-brand-600 text-white px-8 py-4 sm:px-14 sm:py-5 rounded-[2rem] sm:rounded-[2.5rem] text-base sm:text-lg font-black tracking-tight shadow-[0_20px_40px_-10px_rgba(99,102,241,0.5),inset_0_1px_1px_rgba(255,255,255,0.3)] hover:shadow-[0_30px_60px_-15px_rgba(99,102,241,0.6)] active:scale-[0.96] transition-all duration-500 ease-[cubic-bezier(0.16,1,0.3,1)] hover:-translate-y-1.5 flex items-center justify-center gap-3 border border-indigo-400">
+            <!-- 开始作业的大按钮浮层 -->
+            <div id="start-job-overlay" class="absolute bottom-10 sm:bottom-16 left-1/2 transform -translate-x-1/2 z-50 hidden pointer-events-auto w-[90%] sm:w-auto flex justify-center">
+                <button onclick="startGuidance()" class="w-full sm:w-auto bg-slate-900 text-white px-10 py-4.5 sm:px-16 sm:py-5 rounded-[2rem] text-base sm:text-lg font-black tracking-tight shadow-[0_20px_40px_-10px_rgba(0,0,0,0.3),inset_0_1px_1px_rgba(255,255,255,0.2)] hover:shadow-[0_30px_60px_-15px_rgba(0,0,0,0.4)] hover:-translate-y-1.5 active:scale-[0.96] transition-all duration-500 ease-[cubic-bezier(0.16,1,0.3,1)] flex items-center justify-center gap-3">
                     <i data-lucide="rocket" class="w-5 h-5"></i> 启动空间作业
                 </button>
             </div>
         </div>
 
+        <!-- 3D 拣货实景层 -->
         <div id="view-3d-picking" class="absolute inset-0 z-20 hidden" onwheel="handleWheel(event)">
             <div id="layer1-bg-wall" class="absolute inset-0 z-10 pointer-events-none">
                 <div id="cabinet-wall-container">
@@ -265,25 +282,26 @@
             </div>
 
             <div id="layer2-3d-hologram" class="absolute inset-0 z-30 pointer-events-none flex items-center justify-center overflow-hidden dynamic-ui">
-                <div id="hologram-interaction-zone" class="absolute w-[45vw] max-w-[300px] h-[45vw] max-h-[300px] z-40 pointer-events-auto cursor-grab active:cursor-grabbing rounded-full"></div>
+                <!-- 解决痛点②：移除了禁用触控的类，恢复了这块区域的 3D 操作能力 -->
+                <div id="hologram-interaction-zone" class="absolute w-[50vw] max-w-[350px] h-[50vw] max-h-[350px] z-40 pointer-events-auto cursor-grab active:cursor-grabbing rounded-full"></div>
                 <div id="part-3d-viewer" class="w-full h-full pointer-events-none"></div>
             </div>
 
             <div class="absolute inset-0 z-50 pointer-events-none">
                 <div id="model-loader-ui" class="absolute inset-0 flex flex-col items-center justify-center hidden pointer-events-none">
-                    <div class="w-14 h-14 sm:w-16 sm:h-16 rounded-[1.2rem] sm:rounded-[1.5rem] bg-white/80 backdrop-blur-xl shadow-[0_20px_40px_-10px_rgba(0,0,0,0.08)] border border-white flex items-center justify-center mb-4">
-                        <i data-lucide="loader-2" class="w-6 h-6 sm:w-8 sm:h-8 animate-spin text-brand-600"></i>
+                    <div class="w-16 h-16 rounded-[1.5rem] bg-white/80 backdrop-blur-2xl shadow-[0_20px_40px_-10px_rgba(0,0,0,0.1),inset_0_1px_1px_rgba(255,255,255,1)] border border-white/60 flex items-center justify-center mb-4">
+                        <i data-lucide="loader-2" class="w-8 h-8 animate-spin text-slate-900"></i>
                     </div>
                 </div>
 
-                <div class="absolute right-4 bottom-8 sm:right-8 sm:bottom-1/4 flex flex-col items-center gap-4 sm:gap-6 pointer-events-auto">
-                    <button onclick="adjustQuantity(1)" class="interactive-btn group relative flex items-center justify-center w-12 h-12 sm:w-14 sm:h-14 rounded-full bg-white/80 backdrop-blur-xl shadow-[0_10px_30px_-5px_rgba(0,0,0,0.06)] border border-white text-slate-500 hover:text-brand-600 hover:-translate-y-1">
+                <div class="absolute right-6 bottom-10 sm:right-10 sm:bottom-1/4 flex flex-col items-center gap-5 sm:gap-6 pointer-events-auto">
+                    <button onclick="adjustQuantity(1)" class="interactive-btn group relative flex items-center justify-center w-14 h-14 rounded-full bg-white/80 backdrop-blur-2xl shadow-[0_12px_30px_-5px_rgba(0,0,0,0.1),inset_0_1px_1px_rgba(255,255,255,1)] border border-white/60 text-slate-600 hover:text-brand-600 hover:-translate-y-1">
                         <i data-lucide="plus" class="w-5 h-5 transition-transform group-hover:scale-110"></i>
                     </button>
-                    <button onclick="adjustQuantity(-1)" class="interactive-btn group relative flex items-center justify-center w-12 h-12 sm:w-14 sm:h-14 rounded-full bg-white/80 backdrop-blur-xl shadow-[0_10px_30px_-5px_rgba(0,0,0,0.06)] border border-white text-slate-500 hover:text-brand-600 hover:-translate-y-1">
+                    <button onclick="adjustQuantity(-1)" class="interactive-btn group relative flex items-center justify-center w-14 h-14 rounded-full bg-white/80 backdrop-blur-2xl shadow-[0_12px_30px_-5px_rgba(0,0,0,0.1),inset_0_1px_1px_rgba(255,255,255,1)] border border-white/60 text-slate-600 hover:text-brand-600 hover:-translate-y-1">
                         <i data-lucide="minus" class="w-5 h-5 transition-transform group-hover:scale-110"></i>
                     </button>
-                    <button onclick="reportShortage()" class="interactive-btn group relative flex items-center justify-center w-12 h-12 sm:w-14 sm:h-14 rounded-full bg-white/80 backdrop-blur-xl shadow-[0_10px_30px_-5px_rgba(0,0,0,0.06)] border border-white text-red-400 hover:text-red-500 hover:-translate-y-1 mt-1 sm:mt-2">
+                    <button onclick="reportShortage()" class="interactive-btn group relative flex items-center justify-center w-14 h-14 rounded-full bg-white/80 backdrop-blur-2xl shadow-[0_12px_30px_-5px_rgba(0,0,0,0.1),inset_0_1px_1px_rgba(255,255,255,1)] border border-white/60 text-red-400 hover:text-red-500 hover:-translate-y-1 mt-2">
                         <i data-lucide="triangle-alert" class="w-5 h-5 transition-transform group-hover:scale-110"></i>
                     </button>
                 </div>
@@ -291,37 +309,38 @@
         </div>
     </main>
 
-    <div id="job-log-overlay" class="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/20 backdrop-blur-md hidden opacity-0 transition-opacity duration-500 pointer-events-auto">
-        <div class="bg-white/90 backdrop-blur-3xl w-[95%] sm:w-[92%] max-w-4xl max-h-[85vh] rounded-[2rem] sm:rounded-[2.5rem] shadow-[0_50px_100px_-20px_rgba(0,0,0,0.15)] border border-white flex flex-col overflow-hidden transform scale-95 transition-transform duration-700 ease-[cubic-bezier(0.16,1,0.3,1)]" id="job-log-modal">
-            <div class="p-5 sm:p-8 border-b border-slate-200/50 flex justify-between items-center">
-                <div class="flex items-center gap-4 sm:gap-5">
-                    <div class="w-12 h-12 sm:w-14 sm:h-14 rounded-[1.2rem] sm:rounded-[1.5rem] bg-gradient-to-br from-emerald-400 to-emerald-500 text-white flex items-center justify-center shadow-[inset_0_1px_1px_rgba(255,255,255,0.4),_0_12px_24px_-6px_rgba(16,185,129,0.4)]"><i data-lucide="check-check" class="w-5 h-5 sm:w-6 sm:h-6"></i></div>
+    <!-- 结果统计与导出弹层 (精致 Modal) -->
+    <div id="job-log-overlay" class="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/40 backdrop-blur-md hidden opacity-0 transition-opacity duration-500 pointer-events-auto">
+        <div class="bg-white/90 backdrop-blur-3xl w-[95%] sm:w-[92%] max-w-4xl max-h-[85vh] rounded-[2rem] sm:rounded-[2.5rem] shadow-[0_50px_100px_-20px_rgba(0,0,0,0.2),inset_0_1px_1px_rgba(255,255,255,1)] border border-white/60 flex flex-col overflow-hidden transform scale-95 transition-transform duration-700 ease-[cubic-bezier(0.16,1,0.3,1)]" id="job-log-modal">
+            <div class="p-6 sm:p-8 border-b border-slate-200/50 flex justify-between items-center bg-white/50">
+                <div class="flex items-center gap-5">
+                    <div class="w-14 h-14 rounded-[1.5rem] bg-gradient-to-br from-emerald-400 to-emerald-500 text-white flex items-center justify-center shadow-[inset_0_1px_1px_rgba(255,255,255,0.4),_0_12px_24px_-6px_rgba(16,185,129,0.4)]"><i data-lucide="check-check" class="w-6 h-6"></i></div>
                     <div>
-                        <h2 class="text-xl sm:text-3xl font-black text-slate-900 tracking-tighter">作业已完成</h2>
-                        <p id="log-summary-text" class="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-1">--</p>
+                        <h2 class="text-2xl sm:text-3xl font-black text-slate-900 tracking-tighter">作业已完成</h2>
+                        <p id="log-summary-text" class="text-[11px] font-bold text-slate-400 uppercase tracking-widest mt-1">--</p>
                     </div>
                 </div>
             </div>
             
-            <div class="flex-1 overflow-y-auto no-scrollbar relative p-4 sm:p-6 bg-slate-50/50">
+            <div class="flex-1 overflow-y-auto no-scrollbar relative p-5 sm:p-8 bg-slate-50/50">
                 <table class="w-full text-left border-collapse">
                     <thead class="sticky top-0 bg-white/80 backdrop-blur-xl z-10 shadow-sm rounded-xl overflow-hidden">
                         <tr>
-                            <th class="py-3 sm:py-4 px-3 sm:px-5 text-[10px] font-black text-slate-400 uppercase tracking-widest rounded-tl-xl rounded-bl-xl">颗粒资产名称</th>
-                            <th class="py-3 sm:py-4 px-3 sm:px-5 text-[10px] font-black text-slate-400 uppercase tracking-widest hidden sm:table-cell">物理位置</th>
-                            <th class="py-3 sm:py-4 px-3 sm:px-5 text-[10px] font-black text-slate-400 uppercase tracking-widest text-center">实际 / 目标</th>
-                            <th class="py-3 sm:py-4 px-3 sm:px-5 text-[10px] font-black text-slate-400 uppercase tracking-widest text-center rounded-tr-xl rounded-br-xl">状态追踪</th>
+                            <th class="py-4 px-4 sm:px-6 text-[10px] font-black text-slate-400 uppercase tracking-widest rounded-tl-xl rounded-bl-xl">颗粒资产名称</th>
+                            <th class="py-4 px-4 sm:px-6 text-[10px] font-black text-slate-400 uppercase tracking-widest hidden sm:table-cell">物理位置</th>
+                            <th class="py-4 px-4 sm:px-6 text-[10px] font-black text-slate-400 uppercase tracking-widest text-center">实际 / 目标</th>
+                            <th class="py-4 px-4 sm:px-6 text-[10px] font-black text-slate-400 uppercase tracking-widest text-center rounded-tr-xl rounded-br-xl">状态追踪</th>
                         </tr>
                     </thead>
                     <tbody id="log-table-body" class="divide-y divide-slate-100"></tbody>
                 </table>
             </div>
             
-            <div class="p-4 sm:p-6 border-t border-slate-200/50 bg-white/50 flex flex-col sm:flex-row justify-end gap-3 sm:gap-4">
-                <button onclick="exportLogToExcel()" class="h-12 w-full sm:w-auto px-6 rounded-[1rem] sm:rounded-[1.2rem] bg-white shadow-[0_4px_15px_-3px_rgba(0,0,0,0.05)] border border-slate-200 text-slate-600 font-bold hover:text-brand-600 hover:-translate-y-0.5 active:scale-95 transition-all duration-300 flex items-center justify-center gap-2 text-sm">
+            <div class="p-5 sm:p-6 border-t border-slate-200/50 bg-white/50 flex flex-col sm:flex-row justify-end gap-4">
+                <button onclick="exportLogToExcel()" class="h-12 w-full sm:w-auto px-6 rounded-[1.2rem] bg-white shadow-[0_4px_15px_-3px_rgba(0,0,0,0.05),inset_0_1px_1px_rgba(255,255,255,1)] border border-slate-200 text-slate-600 font-bold hover:text-brand-600 hover:-translate-y-0.5 active:scale-95 transition-all duration-300 flex items-center justify-center gap-2 text-sm">
                     <i data-lucide="download" class="w-4 h-4"></i> 导出日志
                 </button>
-                <button onclick="closeLogAndReset()" class="h-12 w-full sm:w-auto px-8 rounded-[1rem] sm:rounded-[1.2rem] bg-slate-900 text-white shadow-[0_10px_20px_-5px_rgba(0,0,0,0.2)] font-bold tracking-wide hover:-translate-y-0.5 active:scale-95 transition-all duration-300 text-sm flex justify-center items-center">
+                <button onclick="closeLogAndReset()" class="h-12 w-full sm:w-auto px-8 rounded-[1.2rem] bg-slate-900 text-white shadow-[0_10px_20px_-5px_rgba(0,0,0,0.2)] font-bold tracking-wide hover:-translate-y-0.5 active:scale-95 transition-all duration-300 text-sm flex justify-center items-center">
                     返回数字大厅
                 </button>
             </div>
@@ -329,10 +348,11 @@
     </div>
 
     <script>
+        // 顶级美学的 Toast 提示组件
         const showToast = (msg, isError = false) => {
             const t = document.createElement('div');
-            t.className = `fixed top-10 left-1/2 -translate-x-1/2 px-6 py-3.5 rounded-full font-bold text-[13px] shadow-[0_15px_40px_rgba(0,0,0,0.08)] z-[9999] transition-all duration-500 transform translate-y-[-30px] opacity-0 flex items-center gap-2.5 backdrop-blur-xl ${isError ? 'bg-red-50/90 text-red-600 border border-red-200/50' : 'bg-white/90 text-slate-700 border border-slate-200/50'}`;
-            t.innerHTML = `${isError ? '<i data-lucide="triangle-alert" class="w-4 h-4"></i>' : '<i data-lucide="info" class="w-4 h-4"></i>'} <span>${msg}</span>`;
+            t.className = `fixed top-12 left-1/2 -translate-x-1/2 px-6 py-4 rounded-full font-bold text-[13px] shadow-[0_20px_40px_rgba(0,0,0,0.1),inset_0_1px_1px_rgba(255,255,255,1)] z-[9999] transition-all duration-500 transform translate-y-[-30px] opacity-0 flex items-center gap-3 backdrop-blur-2xl ${isError ? 'bg-red-50/90 text-red-600 border border-red-200/50' : 'bg-white/90 text-slate-800 border border-white/60'}`;
+            t.innerHTML = `${isError ? '<i data-lucide="triangle-alert" class="w-4 h-4"></i>' : '<i data-lucide="info" class="w-4 h-4 text-slate-500"></i>'} <span>${msg}</span>`;
             document.body.appendChild(t);
             lucide.createIcons();
             requestAnimationFrame(() => { t.classList.remove('translate-y-[-30px]', 'opacity-0'); t.classList.add('translate-y-0', 'opacity-100'); });
@@ -350,14 +370,13 @@
         window.GlobalModelCache = {}; 
         window.GlobalModelIdCache = {}; 
 
-        // 核心性能修复：内存池复用。避免在每次滑动时狂建 Canvas/Mesh 引发内存溢出卡死
+        // 核心性能优化：Canvas 文字纹理复用池
         const TextCanvas = document.createElement('canvas'); 
         TextCanvas.width = 512; TextCanvas.height = 128; 
         const TextCtx = TextCanvas.getContext('2d');
         
         let SharedTextTexture, SharedTextMat, SharedPlaneGeo, SharedBoxGeo, SharedBoxMat;
 
-        // 【错误修复】将依赖 THREE 变量的初始化延迟到库加载完成后
         const initThreeGlobals = () => {
             if(SharedTextTexture) return;
             SharedTextTexture = new THREE.CanvasTexture(TextCanvas);
@@ -376,7 +395,7 @@
             TextCtx.strokeText(text, 256, 64);
             const gradient = TextCtx.createLinearGradient(0, 20, 0, 108);
             if (isShortage) { gradient.addColorStop(0, '#f87171'); gradient.addColorStop(1, '#dc2626'); } 
-            else { gradient.addColorStop(0, '#818cf8'); gradient.addColorStop(1, '#4f46e5'); }
+            else { gradient.addColorStop(0, '#64748b'); gradient.addColorStop(1, '#334155'); }
             TextCtx.fillStyle = gradient; TextCtx.fillText(text, 256, 64);
             if(SharedTextTexture) SharedTextTexture.needsUpdate = true;
         };
@@ -473,15 +492,17 @@
 
         const loadModelAsset = (url, type) => new Promise((resolve, reject) => new (type === 'obj' ? THREE.OBJLoader : THREE.FBXLoader)().load(url, resolve, undefined, reject));
 
+        // 解决痛点①：约束 3D 模型大小，防止超出视野
         const processRawModel = (rawModel, partName) => {
             const baseColors = [0x6366f1, 0x10b981, 0xf43f5e, 0xf59e0b, 0x8b5cf6, 0x0ea5e9];
             let hash = 0; for (let j = 0; j < partName.length; j++) hash = partName.charCodeAt(j) + ((hash << 5) - hash);
-            const customMat = new THREE.MeshStandardMaterial({ color: baseColors[Math.abs(hash) % baseColors.length], metalness: 0.1, roughness: 0.2, clearcoat: 0.5 });
+            const customMat = new THREE.MeshStandardMaterial({ color: baseColors[Math.abs(hash) % baseColors.length], metalness: 0.2, roughness: 0.1, clearcoat: 0.8 });
             rawModel.traverse(child => { if (child.isMesh) child.material = customMat; });
             const box = new THREE.Box3().setFromObject(rawModel);
             const wrapper = new THREE.Group(); rawModel.position.sub(box.getCenter(new THREE.Vector3())); wrapper.add(rawModel);
             const size = box.getSize(new THREE.Vector3()); const maxDim = Math.max(size.x, size.y, size.z);
-            if (maxDim > 0) wrapper.scale.setScalar(2 / maxDim);
+            // 将最大尺寸固定约束在一个非常合理的值，解决显示过大问题
+            if (maxDim > 0) wrapper.scale.setScalar(1.5 / maxDim);
             return wrapper;
         };
 
@@ -490,9 +511,11 @@
         
         let targetWallRotX = 8, targetWallRotY = -18, targetWallOffsetY = 0; 
         let currentWallRotX = 8, currentWallRotY = -18, currentWallOffsetY = 0;
+        let wallContainerEl = null;
 
         function init3DPartViewer() {
             const container = document.getElementById('part-3d-viewer');
+            wallContainerEl = document.getElementById('cabinet-wall-container');
             if (!container) return;
             viewer3D.scene = new THREE.Scene();
             viewer3D.camera = new THREE.PerspectiveCamera(35, container.clientWidth / container.clientHeight, 0.1, 100);
@@ -506,32 +529,35 @@
             viewer3D.controls = new THREE.OrbitControls(viewer3D.camera, interactZone);
             viewer3D.controls.enableDamping = true; viewer3D.controls.dampingFactor = 0.05;
             
-            // 【触控冲突修复】移动端直接禁用手动缩放和旋转，改为自动慢转，把手势彻底让给滑动切换页面
-            const isMobile = window.innerWidth < 768;
+            // 解决痛点②：重新启用移动端的模型旋转和缩放交互
             viewer3D.controls.enablePan = false; 
-            viewer3D.controls.enableZoom = !isMobile;
-            viewer3D.controls.enableRotate = !isMobile;
-            viewer3D.controls.autoRotate = isMobile;
-            viewer3D.controls.autoRotateSpeed = 2.0;
+            viewer3D.controls.enableZoom = true;
+            viewer3D.controls.enableRotate = true;
+            viewer3D.controls.autoRotate = true; // 保留微弱自转增加高级感
+            viewer3D.controls.autoRotateSpeed = 1.0;
 
             viewer3D.scene.add(new THREE.AmbientLight(0xffffff, 0.9));
             const dir = new THREE.DirectionalLight(0xffffff, 0.6); dir.position.set(5, 10, 7); viewer3D.scene.add(dir); 
             const dir2 = new THREE.DirectionalLight(0xffffff, 0.4); dir2.position.set(-5, 5, -7); viewer3D.scene.add(dir2);
 
+            // 解决痛点③：提升帧率与性能优化
             const animate = () => {
                 requestAnimationFrame(animate); 
                 
-                currentWallRotX += (targetWallRotX - currentWallRotX) * 0.08;
-                currentWallRotY += (targetWallRotY - currentWallRotY) * 0.08;
-                currentWallOffsetY += (targetWallOffsetY - currentWallOffsetY) * 0.08;
-                
-                const w = document.getElementById('cabinet-wall-container');
-                if(w) w.style.transform = `rotateX(${currentWallRotX}deg) rotateY(${currentWallRotY}deg) translateZ(-50px) translateY(${currentWallOffsetY}vh)`;
+                if (state.mainView === 'cabinet') {
+                    // 使用插值平滑移动
+                    currentWallRotX += (targetWallRotX - currentWallRotX) * 0.08;
+                    currentWallRotY += (targetWallRotY - currentWallRotY) * 0.08;
+                    currentWallOffsetY += (targetWallOffsetY - currentWallOffsetY) * 0.08;
+                    
+                    // 仅当变化量大于阈值时操作 DOM，避免 Layout Thrashing
+                    if (wallContainerEl && (Math.abs(targetWallRotX - currentWallRotX) > 0.001 || Math.abs(targetWallRotY - currentWallRotY) > 0.001 || Math.abs(targetWallOffsetY - currentWallOffsetY) > 0.001)) {
+                        wallContainerEl.style.transform = `rotateX(${currentWallRotX.toFixed(3)}deg) rotateY(${currentWallRotY.toFixed(3)}deg) translateZ(-50px) translateY(${currentWallOffsetY.toFixed(3)}vh)`;
+                    }
 
-                if (viewer3D.controls && viewer3D.controls.enabled) viewer3D.controls.update();
-                if (viewer3D.scene) {
-                    viewer3D.scene.children.forEach(child => { if (child.isTaskWrapper && !isMobile) child.rotation.y += 0.004; });
-                    if (state.mainView === 'cabinet') viewer3D.renderer.render(viewer3D.scene, viewer3D.camera);
+                    if (viewer3D.controls && viewer3D.controls.enabled) viewer3D.controls.update();
+                    // 仅在当前处于 3D 视图时执行高开销的 WebGL Render
+                    viewer3D.renderer.render(viewer3D.scene, viewer3D.camera);
                 }
             };
             animate();
@@ -552,7 +578,6 @@
             const session = ++viewer3D.currentSession;
             const loaderUi = document.getElementById('model-loader-ui');
 
-            // 1. 旧模型干脆退场（通过公用对象池，无需 Dispose）
             if (viewer3D.activeWrapper) {
                 const oldWrapper = viewer3D.activeWrapper;
                 viewer3D.activeWrapper = null; 
@@ -566,20 +591,19 @@
                 }).start();
             }
 
-            // 2. 终极防抖 (250ms)
             await new Promise(resolve => setTimeout(resolve, 250));
             if (session !== viewer3D.currentSession) return;
 
             loaderUi.classList.remove('hidden');
 
-            // 更新全局对象池贴图
             updateVolumetricText(`${partName}  x  ${initialQty}`, isShortage);
 
             const newWrapper = new THREE.Group(); 
             newWrapper.isTaskWrapper = true; 
             
             let physicalModel = new THREE.Group();
-            physicalModel.scale.setScalar(2.6); 
+            // 解决痛点①：大幅调低此处的二次乘数（原为 2.6），使其符合最佳视角
+            physicalModel.scale.setScalar(1.5); 
             newWrapper.add(physicalModel);
 
             const label3D = new THREE.Group();
@@ -601,7 +625,6 @@
                 if (viewer3D.controls) viewer3D.controls.enabled = true;
             }).start();
 
-            // 4. 异步下载 3D 物理模型
             if (!window.GlobalModelCache[partName]) {
                 const uuid = await fetchCloudModelId(partName);
                 if (session !== viewer3D.currentSession) return;
@@ -635,7 +658,7 @@
             const box = new THREE.Box3().setFromObject(loadedMesh); 
             let maxY = 1.0; if (box.max.y !== Infinity && box.max.y !== -Infinity) maxY = box.max.y;
 
-            new TWEEN.Tween(label3D.position).to({ y: maxY + 1.8 }, 400).easing(TWEEN.Easing.Cubic.Out).start();
+            new TWEEN.Tween(label3D.position).to({ y: maxY + 1.2 }, 400).easing(TWEEN.Easing.Cubic.Out).start();
 
             loadedMesh.scale.setScalar(0.01);
             new TWEEN.Tween(loadedMesh.scale).to({ x: 1, y: 1, z: 1 }, 600).easing(TWEEN.Easing.Elastic.Out).start();
@@ -687,7 +710,7 @@
 
                     let strokeColor = "#cbd5e1", strokeWidth = "2.5", strokeDash = "6 6", isCurrent = false;
                     if (i < currentCabIdx) { strokeColor = "#10b981"; strokeWidth = "3.5"; strokeDash = "none"; } 
-                    else if (i === currentCabIdx) { strokeColor = "#6366f1"; strokeWidth = "4.5"; strokeDash = "8 6"; isCurrent = true; }
+                    else if (i === currentCabIdx) { strokeColor = "#3b82f6"; strokeWidth = "4.5"; strokeDash = "8 6"; isCurrent = true; }
 
                     pathSvg += `<polyline points="${startPoint.cx},${startPoint.cy} ${m1.cx},${m1.cy} ${m2.cx},${m2.cy} ${endPoint.cx},${endPoint.cy}" fill="none" stroke="${strokeColor}" stroke-width="${strokeWidth}" stroke-dasharray="${strokeDash}" ${isCurrent ? 'class="flowing-path"' : 'opacity="0.8"'} stroke-linejoin="round" stroke-linecap="round" />`;
 
@@ -700,25 +723,25 @@
 
                 if (currentCabId) {
                     const currCab = CABINETS.find(c => c.id === currentCabId);
-                    if (currCab) { hasTarget = true; const tPos = toSvg(currCab.x, currCab.y); cx = tPos.cx; cy = tPos.cy; activeTargets.push(currCab); const sPos = toSvg(2, currCab.y); pathSvg += `<circle cx="${sPos.cx}" cy="${sPos.cy}" r="6" fill="#6366f1" />`; }
+                    if (currCab) { hasTarget = true; const tPos = toSvg(currCab.x, currCab.y); cx = tPos.cx; cy = tPos.cy; activeTargets.push(currCab); const sPos = toSvg(2, currCab.y); pathSvg += `<circle cx="${sPos.cx}" cy="${sPos.cy}" r="6" fill="#3b82f6" />`; }
                 }
             }
 
-            const zSvg = (x,y,w,h,l) => { const tl=toSvg(x,y), br=toSvg(x+w,y+h); return `<rect x="${tl.cx}" y="${tl.cy}" width="${br.cx-tl.cx}" height="${br.cy-tl.cy}" fill="#f8fafc" stroke="#e2e8f0" stroke-width="2" rx="6"/><text x="${tl.cx+(br.cx-tl.cx)/2}" y="${tl.cy+(br.cy-tl.cy)/2}" font-size="14" font-weight="900" fill="#94a3b8" text-anchor="middle" dominant-baseline="middle" letter-spacing="2" ${w<h?`transform="rotate(90, ${tl.cx+(br.cx-tl.cx)/2}, ${tl.cy+(br.cy-tl.cy)/2})"`:''}>${l}</text>`; };
-            const bgSvg = `<defs><pattern id="dotGrid" width="30" height="30" patternUnits="userSpaceOnUse"><circle cx="15" cy="15" r="1.5" fill="#e2e8f0"/></pattern></defs><rect x="-5000" y="-5000" width="10000" height="10000" fill="url(#dotGrid)"/>${zSvg(-4.8,0.5,4.3,10.5,"产品设计")}${zSvg(-4.8,12.5,4.3,3,"茶水间")}${zSvg(-4.8,17.5,4.3,9,"研发二组")}${zSvg(4.5,0.5,5,28.5,"产品设计")}`;
+            const zSvg = (x,y,w,h,l) => { const tl=toSvg(x,y), br=toSvg(x+w,y+h); return `<rect x="${tl.cx}" y="${tl.cy}" width="${br.cx-tl.cx}" height="${br.cy-tl.cy}" fill="#f1f5f9" stroke="#e2e8f0" stroke-width="2" rx="8"/><text x="${tl.cx+(br.cx-tl.cx)/2}" y="${tl.cy+(br.cy-tl.cy)/2}" font-size="14" font-weight="900" fill="#94a3b8" text-anchor="middle" dominant-baseline="middle" letter-spacing="2" ${w<h?`transform="rotate(90, ${tl.cx+(br.cx-tl.cx)/2}, ${tl.cy+(br.cy-tl.cy)/2})"`:''}>${l}</text>`; };
+            const bgSvg = `<defs><pattern id="dotGrid" width="30" height="30" patternUnits="userSpaceOnUse"><circle cx="15" cy="15" r="1.5" fill="#e2e8f0"/></pattern></defs><rect x="-5000" y="-5000" width="10000" height="10000" fill="url(#dotGrid)"/>${zSvg(-4.8,0.5,4.3,10.5,"产品设计")}${zSvg(-4.8,12.5,4.3,3,"茶水间")}${zSvg(-4.8,17.5,4.3,9,"研发二组")}${zSvg(4.5,0.5,5,28.5,"测试区域")}`;
 
             const cabsSvg = CABINETS.map(cab => {
                 const pos = toSvg(cab.x, cab.y), w = cab.type === 'large' ? 56 : 42, h = cab.type === 'large' ? 26 : 20, isTgt = activeTargets.find(t => t.id === cab.id);
-                const rA = isTgt ? `fill="#eef2ff" stroke="#6366f1" stroke-width="2.5" filter="drop-shadow(0 8px 16px rgba(99,102,241,0.3))"` : `fill="#ffffff" stroke="#cbd5e1" stroke-width="1.5" filter="drop-shadow(0 4px 10px rgba(0,0,0,0.03))"`;
+                const rA = isTgt ? `fill="#eff6ff" stroke="#3b82f6" stroke-width="2.5" filter="drop-shadow(0 8px 16px rgba(59,130,246,0.3))"` : `fill="#ffffff" stroke="#cbd5e1" stroke-width="1.5" filter="drop-shadow(0 4px 10px rgba(0,0,0,0.03))"`;
                 const tA = `fill="${cab.type === 'large' ? '#ef4444' : '#64748b'}" font-weight="${isTgt?'900':'700'}" font-size="${cab.type === 'large' ? (isTgt?'14':'12') : (isTgt?'11':'10')}"`;
                 
                 let sequenceBadge = ''; const cabIdx = uniqueCabVisits.indexOf(cab.id);
                 if (cabIdx !== -1) {
                     let badgeBg = "#94a3b8"; 
-                    if (state.isGuiding) { if (cabIdx < currentCabIdx) badgeBg = "#10b981"; else if (cabIdx === currentCabIdx) badgeBg = "#6366f1"; }
+                    if (state.isGuiding) { if (cabIdx < currentCabIdx) badgeBg = "#10b981"; else if (cabIdx === currentCabIdx) badgeBg = "#3b82f6"; }
                     sequenceBadge = `<circle cx="${pos.cx + w/2 + 2}" cy="${pos.cy - h/2 - 2}" r="8" fill="${badgeBg}" stroke="#fff" stroke-width="2"/><text x="${pos.cx + w/2 + 2}" y="${pos.cy - h/2 - 2}" fill="#fff" font-size="9" font-weight="900" text-anchor="middle" dominant-baseline="central">${cabIdx + 1}</text>`;
                 }
-                return `${isTgt?`<rect x="${pos.cx-w/2}" y="${pos.cy-h/2}" width="${w}" height="${h}" rx="6" fill="none" stroke="#818cf8" stroke-width="2"><animate attributeName="stroke-width" values="2; 8; 2" dur="1.5s" repeatCount="indefinite"/><animate attributeName="stroke-opacity" values="1; 0; 0" dur="1.5s" repeatCount="indefinite"/></rect>`:''}<g class="${isTgt?'cabinet-target cursor-pointer':''}"><rect x="${pos.cx-w/2}" y="${pos.cy-h/2}" width="${w}" height="${h}" rx="6" ${rA} style="transition: all 0.4s ease;" /><text x="${pos.cx}" y="${pos.cy}" text-anchor="middle" dominant-baseline="central" pointer-events="none" ${tA}>${cab.displayId}</text>${sequenceBadge}</g>`;
+                return `${isTgt?`<rect x="${pos.cx-w/2}" y="${pos.cy-h/2}" width="${w}" height="${h}" rx="6" fill="none" stroke="#60a5fa" stroke-width="2"><animate attributeName="stroke-width" values="2; 8; 2" dur="1.5s" repeatCount="indefinite"/><animate attributeName="stroke-opacity" values="1; 0; 0" dur="1.5s" repeatCount="indefinite"/></rect>`:''}<g class="${isTgt?'cabinet-target cursor-pointer':''}"><rect x="${pos.cx-w/2}" y="${pos.cy-h/2}" width="${w}" height="${h}" rx="6" ${rA} style="transition: all 0.4s ease;" /><text x="${pos.cx}" y="${pos.cy}" text-anchor="middle" dominant-baseline="central" pointer-events="none" ${tA}>${cab.displayId}</text>${sequenceBadge}</g>`;
             }).join('');
 
             let svgEl = container.querySelector('svg');
@@ -821,10 +844,10 @@
             const btn = document.getElementById('toggle-map-btn'); 
             if (state.mainView === 'map') {
                 btn.innerHTML = `<i data-lucide="undo-2" class="w-5 h-5 group-active:scale-90 transition-transform"></i>`;
-                btn.className = "fixed top-5 right-4 sm:top-6 sm:right-6 z-[100] w-11 h-11 sm:w-12 sm:h-12 rounded-[1rem] bg-indigo-50 border border-indigo-100 shadow-inner flex items-center justify-center text-brand-600 hover:-translate-y-0.5 transition-all duration-500 ease-[cubic-bezier(0.16,1,0.3,1)] pointer-events-auto group interactive-btn";
+                btn.className = "fixed top-5 right-4 sm:top-6 sm:right-6 z-[100] w-12 h-12 rounded-[1.2rem] bg-indigo-50 border border-indigo-100 shadow-inner flex items-center justify-center text-brand-600 hover:-translate-y-1 transition-all duration-500 ease-[cubic-bezier(0.16,1,0.3,1)] pointer-events-auto group interactive-btn";
             } else {
                 btn.innerHTML = `<i data-lucide="map" class="w-5 h-5 group-active:scale-90 transition-transform"></i>`;
-                btn.className = "fixed top-5 right-4 sm:top-6 sm:right-6 z-[100] w-11 h-11 sm:w-12 sm:h-12 rounded-[1rem] bg-white/80 backdrop-blur-xl border border-white shadow-[0_8px_30px_-4px_rgba(0,0,0,0.05)] flex items-center justify-center text-slate-700 hover:shadow-[0_12px_40px_-8px_rgba(0,0,0,0.08)] hover:-translate-y-0.5 transition-all duration-500 ease-[cubic-bezier(0.16,1,0.3,1)] pointer-events-auto group interactive-btn";
+                btn.className = "fixed top-5 right-4 sm:top-6 sm:right-6 z-[100] w-12 h-12 rounded-[1.2rem] bg-white/80 backdrop-blur-2xl border border-white/60 shadow-[0_12px_40px_-8px_rgba(0,0,0,0.08),inset_0_1px_1px_rgba(255,255,255,1)] flex items-center justify-center text-slate-700 hover:shadow-[0_16px_50px_-10px_rgba(0,0,0,0.12)] hover:-translate-y-1 transition-all duration-500 ease-[cubic-bezier(0.16,1,0.3,1)] pointer-events-auto group interactive-btn";
             }
             lucide.createIcons();
         };
@@ -852,9 +875,9 @@
             let html = '';
             state.pickingTasks.forEach((t, idx) => {
                 const isA = state.isGuiding && idx === state.currentTaskIndex, isD = state.isGuiding && idx < state.currentTaskIndex;
-                const bC = isA ? "bg-white shadow-[0_10px_30px_-5px_rgba(99,102,241,0.15)] border border-brand-200" : (isD ? "bg-transparent opacity-40 border border-transparent" : "bg-white/40 border border-white shadow-sm");
+                const bC = isA ? "bg-white shadow-[0_10px_30px_-5px_rgba(99,102,241,0.15)] border border-brand-200" : (isD ? "bg-transparent opacity-40 border border-transparent" : "bg-white/60 border border-white shadow-sm");
                 const nC = isA ? "bg-gradient-to-br from-brand-400 to-brand-600 shadow-[0_8px_16px_-4px_rgba(99,102,241,0.5),inset_0_1px_1px_rgba(255,255,255,0.4)] text-white" : (isD ? "bg-slate-200 text-slate-400" : "bg-white shadow-sm border border-slate-100 text-slate-500");
-                html += `<div ${isA ? 'id="active-task-item"' : ''} class="flex items-center gap-4 p-3.5 rounded-[1.2rem] transition-all duration-500 ease-out ${bC}"><div class="w-7 h-7 rounded-xl flex items-center justify-center text-[11px] font-black shrink-0 ${nC}">${isD?'<i data-lucide="check" class="w-4 h-4"></i>':idx+1}</div><div class="flex-1 min-w-0"><div class="text-[13px] font-bold text-slate-800 truncate tracking-tight">${t.partName}</div></div><div class="font-mono text-[14px] font-black text-slate-700">x${t.quantity}</div></div>`;
+                html += `<div ${isA ? 'id="active-task-item"' : ''} class="flex items-center gap-4 p-4 rounded-[1.2rem] transition-all duration-500 ease-out ${bC}"><div class="w-8 h-8 rounded-xl flex items-center justify-center text-[12px] font-black shrink-0 ${nC}">${isD?'<i data-lucide="check" class="w-4 h-4"></i>':idx+1}</div><div class="flex-1 min-w-0"><div class="text-[13px] font-bold text-slate-800 truncate tracking-tight">${t.partName}</div></div><div class="font-mono text-[14px] font-black text-slate-700">x${t.quantity}</div></div>`;
             });
             container.innerHTML = html;
         };
@@ -870,9 +893,9 @@
 
             let html = '';
             p.forEach((item, idx) => {
-                const c = idx === curIdx ? "bg-gradient-to-b from-brand-500 to-brand-600 text-white shadow-[0_8px_20px_-4px_rgba(99,102,241,0.5),inset_0_1px_1px_rgba(255,255,255,0.3)] transform scale-110 z-10 border border-brand-400" : (idx < curIdx ? "bg-emerald-50 text-emerald-600 shadow-sm border border-emerald-100" : "bg-white/80 backdrop-blur-md text-slate-500 shadow-sm border border-white");
-                html += `<div class="px-5 py-2 rounded-full text-[11px] font-black tracking-wider transition-all duration-500 ease-out ${c} whitespace-nowrap">${item.name}</div>`;
-                if(idx < p.length - 1) html += `<div class="w-6 h-[2px] ${idx<curIdx?'bg-emerald-300':(idx===curIdx?'bg-brand-300':'bg-white')} rounded-full shrink-0 shadow-sm"></div>`;
+                const c = idx === curIdx ? "bg-slate-900 text-white shadow-[0_10px_20px_-5px_rgba(0,0,0,0.3),inset_0_1px_1px_rgba(255,255,255,0.2)] transform scale-110 z-10" : (idx < curIdx ? "bg-emerald-50 text-emerald-600 shadow-sm border border-emerald-100" : "bg-white/80 backdrop-blur-md text-slate-500 shadow-sm border border-white");
+                html += `<div class="px-5 py-2.5 rounded-full text-[11px] font-black tracking-wider transition-all duration-500 ease-out ${c} whitespace-nowrap">${item.name}</div>`;
+                if(idx < p.length - 1) html += `<div class="w-6 h-[2px] ${idx<curIdx?'bg-emerald-300':(idx===curIdx?'bg-slate-300':'bg-white')} rounded-full shrink-0 shadow-sm"></div>`;
             });
             container.innerHTML = html; setTimeout(() => container.querySelector('.scale-110')?.scrollIntoView({ inline: 'center', behavior: 'smooth' }), 50);
         };
@@ -989,6 +1012,7 @@
 
         let initialBeta = null; 
 
+        // 解决痛点④：提升移动端背景柜子陀螺仪视差的灵敏度
         const handleDeviceOrientation = (e) => {
             if (state.mainView !== 'cabinet' || !e.gamma || !e.beta) return;
             
@@ -1002,11 +1026,12 @@
             if (betaDiff > 180) betaDiff -= 360; else if (betaDiff < -180) betaDiff += 360;
             betaDiff = Math.max(-40, Math.min(40, betaDiff));
             
-            const rx = gamma / 40;
-            const ry = betaDiff / 40;
+            // 放大比例常数，由原来的 /40 *25 优化为更高灵敏度
+            const rx = gamma / 25;
+            const ry = betaDiff / 25;
             
-            targetWallRotY = -18 + rx * 25; 
-            targetWallRotX = 8 - ry * 15; 
+            targetWallRotY = -18 + rx * 45; 
+            targetWallRotX = 8 - ry * 30; 
         };
 
         const adjustCabinetWallPosition = () => {
@@ -1063,16 +1088,16 @@
             window.addEventListener('mousemove', e => {
                 if (state.mainView !== 'cabinet') return;
                 const rx = (e.clientX / window.innerWidth - 0.5) * 2; const ry = (e.clientY / window.innerHeight - 0.5) * 2;
-                targetWallRotY = -18 + rx * 15; targetWallRotX = 8 - ry * 10; 
+                targetWallRotY = -18 + rx * 25; targetWallRotX = 8 - ry * 15; 
             });
 
-            // 去掉了 #hologram-interaction-zone，允许手势击穿
             const preventCheck = (e) => e.target.closest('button') || e.target.closest('#main-sidebar') || e.target.closest('#cabinet-pipeline');
 
             let touchStartY = 0, touchStartX = 0;
             v.addEventListener('touchstart', e => { touchStartY = e.touches[0].clientY; touchStartX = e.touches[0].clientX; }, {passive: true});
             v.addEventListener('touchend', e => {
-                if(state.mainView !== 'cabinet' || preventCheck(e)) return; 
+                // 解决痛点②：如果触摸发生在了 3D 模型交互区，则中止全局滑屏事件，保证模型可被缩放和旋转
+                if(state.mainView !== 'cabinet' || preventCheck(e) || e.target.closest('#hologram-interaction-zone')) return; 
                 const dy = touchStartY - e.changedTouches[0].clientY; 
                 const dx = Math.abs(touchStartX - e.changedTouches[0].clientX);
                 if (Math.abs(dy) > 70 && Math.abs(dy) > dx) { 
@@ -1085,8 +1110,8 @@
         let wheelTimeout;
         const handleWheel = (e) => { 
             if(state.mainView === 'cabinet' && !state.isAnimating) { 
-                // 仅阻止按钮和UI区的滚动，允许 3D 模型区接收滚轮事件
-                if(e.target.closest('button') || e.target.closest('#main-sidebar') || e.target.closest('#cabinet-pipeline')) return;
+                // 解决痛点②：滚轮触发切换页面前，忽略对 3D 模型的放大缩小操作
+                if(e.target.closest('button') || e.target.closest('#main-sidebar') || e.target.closest('#cabinet-pipeline') || e.target.closest('#hologram-interaction-zone')) return;
                 if (window.wheelTimeout) clearTimeout(window.wheelTimeout); 
                 window.wheelTimeout = setTimeout(() => { if(e.deltaY>0) nextGuidanceStep(); else prevGuidanceStep(); }, 60); 
             } 
@@ -1094,10 +1119,7 @@
 
         const initApp = () => {
             if (viewer3D.scene) return; 
-            
-            // 【执行全局 THREE 变量初始化】
             initThreeGlobals(); 
-            
             init3DPartViewer(); 
             setupInteractions(); 
             renderMap(); 
