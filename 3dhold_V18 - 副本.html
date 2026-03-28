@@ -1,0 +1,1303 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <title>WMS Pro - 空间资产作业系统</title>
+    
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;700;900&family=Noto+Sans+SC:wght@400;500;700;900&display=swap" rel="stylesheet">
+    
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['Inter', 'Noto Sans SC', 'sans-serif'],
+                        mono: ['JetBrains Mono', 'monospace'],
+                    },
+                    colors: { 
+                        neu: { bg: '#e0e5ec', light: '#ffffff', dark: '#a3b1c6' },
+                        brand: { 400: '#818cf8', 500: '#6366f1', 600: '#4f46e5' }
+                    },
+                    boxShadow: { 
+                        'glass-card': '0 20px 60px -15px rgba(163, 177, 198, 0.4)',
+                        'neu-flat': '12px 12px 24px rgba(163, 177, 198, 0.4), -12px -12px 24px rgba(255, 255, 255, 0.95)',
+                        'neu-pressed': 'inset 6px 6px 12px rgba(163, 177, 198, 0.5), inset -6px -6px 12px rgba(255, 255, 255, 0.9)',
+                        'neu-btn': '8px 8px 16px rgba(163, 177, 198, 0.4), -8px -8px 16px rgba(255, 255, 255, 0.9)'
+                    }
+                }
+            }
+        }
+    </script>
+    
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/tween.js/18.6.4/tween.umd.js"></script>
+
+    <script>
+        (function() {
+            const scripts = [
+                "https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js",
+                "https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js",
+                "https://unpkg.com/fflate@0.8.2/umd/index.js",
+                "https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/OBJLoader.js",
+                "https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/FBXLoader.js"
+            ];
+            
+            let i = 0;
+            function loadNext() {
+                if (i >= scripts.length) {
+                    window.dispatchEvent(new Event('WMSDepsLoaded'));
+                    return;
+                }
+                const s = document.createElement('script');
+                s.src = scripts[i];
+                s.onload = function() { i++; loadNext(); };
+                s.onerror = function() { console.warn('Failed to load dependency:', s.src); i++; loadNext(); };
+                document.head.appendChild(s);
+            }
+            loadNext();
+        })();
+    </script>
+
+    <style>
+        /* 极致的基础与抗锯齿优化 */
+        html, body {
+            width: 100%; height: 100%; margin: 0; padding: 0;
+            background-color: #e0e5ec;
+            overflow: hidden; overscroll-behavior-y: none; 
+            -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale;
+            text-rendering: optimizeLegibility;
+        }
+        @supports (height: 100dvh) { body { height: 100dvh; } }
+        
+        .no-scrollbar::-webkit-scrollbar { display: none; }
+        .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+
+        .swipe-container { position: absolute; inset: 0; overflow: hidden; perspective: 2000px; transform-style: preserve-3d; }
+        .swipe-slide { position: absolute; inset: 0; transform-style: preserve-3d; }
+
+        /* 3D 柜体容器 */
+        #cabinet-wall-container {
+            width: 120vw; height: 120vh;
+            position: absolute; left: -10vw; top: -10vh; 
+            transform-style: preserve-3d;
+            transform: rotateX(8deg) rotateY(-18deg) translateZ(-50px) translateY(0vh);
+            will-change: transform; 
+        }
+
+        .cabinet-grid { 
+            display: grid; gap: clamp(8px, 2.5vw, 18px); 
+            width: 100%; height: 100%; 
+            padding: 12vh 6vw 15vh; 
+            transform-style: preserve-3d; position: relative;
+            align-content: center;
+        }
+        @media (min-width: 640px) { .cabinet-grid { padding: 15vh 12vw 15vh; } }
+        
+        /* 新拟态与玻璃质感格子样式 */
+        .grid-cell {
+            background: #e0e5ec; 
+            border-radius: clamp(8px, 2vw, 16px); 
+            display: flex; align-items: center; justify-content: center;
+            font-family: 'JetBrains Mono', monospace; font-size: clamp(12px, 3.5vw, 15px); font-weight: 700; color: #8ba0b8;
+            box-shadow: 8px 8px 16px rgba(163, 177, 198, 0.4), -8px -8px 16px rgba(255, 255, 255, 0.9);
+            border: 1px solid rgba(255, 255, 255, 0.6);
+            transition: all 0.6s cubic-bezier(0.16, 1, 0.3, 1);
+            position: relative; z-index: 2; transform: translateZ(0); backface-visibility: hidden;
+        }
+        
+        .grid-cell.picked {
+            background: rgba(216, 222, 232, 0.6); color: transparent;
+            backdrop-filter: blur(8px);
+            box-shadow: inset 4px 4px 8px rgba(163, 177, 198, 0.5), inset -4px -4px 8px rgba(255, 255, 255, 0.8);
+            border: 1px solid transparent; z-index: 1;
+        }
+        .grid-cell.picked > div.absolute { transform: translateZ(1px); }
+
+        .drawer-box {
+            position: absolute; inset: -1px; transform-style: preserve-3d;
+            transition: transform 0.8s cubic-bezier(0.16, 1, 0.3, 1);
+            transform: translateZ(0); pointer-events: none; opacity: 0;
+            will-change: transform;
+        }
+        .grid-cell.active { background: transparent; box-shadow: none; border-color: transparent; z-index: 50; }
+        .grid-cell.active .drawer-box { transform: translateZ(clamp(60px, 15vw, 100px)); opacity: 1; }
+        
+        /* 抽屉弹出样式 - 强化色彩与阴影 */
+        .drawer-front {
+            position: absolute; inset: 0; background: linear-gradient(135deg, #6366f1, #4f46e5); color: white;
+            border-radius: clamp(8px, 2vw, 16px); display: flex; align-items: center; justify-content: center;
+            font-size: clamp(18px, 6vw, 28px); font-weight: 900; 
+            box-shadow: inset 0 2px 4px rgba(255,255,255,0.4), 0 20px 40px -10px rgba(99,102,241,0.5);
+            transform: translateZ(2px); backface-visibility: hidden; border: 1px solid rgba(255,255,255,0.2);
+        }
+        .drawer-top, .drawer-bottom, .drawer-left, .drawer-right { position: absolute; background: #4338ca; }
+        .drawer-top { top: 0; left: 8px; right: 8px; height: clamp(60px, 15vw, 100px); transform-origin: top; transform: rotateX(-90deg); background: linear-gradient(to bottom, #4f46e5, #4338ca); border-radius: 8px 8px 0 0;}
+        .drawer-bottom { bottom: 0; left: 8px; right: 8px; height: clamp(60px, 15vw, 100px); transform-origin: bottom; transform: rotateX(90deg); background: #312e81; box-shadow: 0 40px 60px -10px rgba(0,0,0,0.5); }
+        .drawer-left { top: 8px; bottom: 8px; left: 0; width: clamp(60px, 15vw, 100px); transform-origin: left; transform: rotateY(90deg); }
+        .drawer-right { top: 8px; bottom: 8px; right: 0; width: clamp(60px, 15vw, 100px); transform-origin: right; transform: rotateY(-90deg); }
+
+        .path-svg { position: absolute; inset: 0; pointer-events: none; z-index: 1; overflow: visible; transform: translateZ(-2px); }
+        @keyframes flowGlow { 0% { stroke-dashoffset: 40; } 100% { stroke-dashoffset: 0; } }
+        .flowing-path { animation: flowGlow 1.2s linear infinite; }
+
+        #part-3d-viewer canvas { 
+            transform-origin: center bottom; outline: none;
+        }
+
+        /* 侧边栏过渡控制 */
+        .sidebar-collapse { transform: translateX(-100%); }
+        svg text { user-select: none; }
+
+        .dynamic-ui {
+            --ui-x: 0px; --ui-y: 0px; --anim-y: 0px; --anim-scale: 1;
+            transform: translate(var(--ui-x), calc(var(--ui-y) + var(--anim-y))) scale(var(--anim-scale));
+            transition: transform 0.6s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.4s ease-out;
+        }
+        
+        .interactive-btn { transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1); }
+        .interactive-btn:active { transform: scale(0.92) translateY(2px); box-shadow: inset 6px 6px 12px rgba(163, 177, 198, 0.5), inset -6px -6px 12px rgba(255, 255, 255, 0.9) !important; }
+
+        /* 磨砂玻璃容器统一样式 */
+        .glass-panel {
+            background: rgba(255, 255, 255, 0.7);
+            backdrop-filter: blur(24px);
+            -webkit-backdrop-filter: blur(24px);
+            border: 1px solid rgba(255, 255, 255, 0.5);
+            box-shadow: 0 20px 60px -15px rgba(163, 177, 198, 0.4);
+        }
+    </style>
+</head>
+<body class="w-screen h-[100dvh] flex relative select-none">
+
+    <input type="file" id="excel-upload" accept=".xlsx, .xls, .csv" class="hidden" onchange="handleExcelUpload(event)">
+
+    <div id="sidebar-backdrop" onclick="toggleSidebar(false)" class="fixed inset-0 bg-slate-900/10 backdrop-blur-sm z-[85] hidden opacity-0 transition-opacity duration-500 lg:hidden"></div>
+
+    <button id="toggle-map-btn" onclick="toggleMainView()" class="fixed top-5 right-4 sm:top-6 sm:right-6 z-[100] w-12 h-12 rounded-[1.2rem] bg-white/70 backdrop-blur-xl shadow-glass-card border border-white/80 flex items-center justify-center text-slate-600 hover:text-brand-600 hover:-translate-y-1 transition-all duration-300 pointer-events-auto group interactive-btn">
+        <i data-lucide="box" class="w-5 h-5 group-active:scale-90 transition-transform"></i>
+    </button>
+
+    <div id="cabinet-pipeline" class="fixed top-[4.5rem] sm:top-6 left-1/2 transform -translate-x-1/2 z-[80] flex items-center gap-1 sm:gap-2 max-w-[96vw] sm:max-w-[65vw] overflow-x-auto no-scrollbar py-2 px-1 sm:px-2 opacity-0 pointer-events-none transition-all duration-500"></div>
+
+    <!-- 左侧边栏 (玻璃态) -->
+    <aside id="main-sidebar" class="fixed left-0 top-0 bottom-0 w-[85vw] sm:w-[380px] p-5 sm:p-7 pt-12 z-[90] glass-panel transition-transform duration-500 ease-[cubic-bezier(0.16,1,0.3,1)] sidebar-collapse flex flex-col">
+        
+        <!-- 侧边栏吸附手柄 (已优化缩小尺寸) -->
+        <div id="sidebar-pull-handle" onclick="toggleSidebar()" class="absolute top-1/2 -right-5 -translate-y-1/2 w-5 h-14 bg-white/80 backdrop-blur-xl border border-l-0 border-white/60 shadow-[4px_0_10px_rgba(163,177,198,0.25)] flex flex-col gap-[3px] items-center justify-center cursor-pointer hover:w-7 transition-all duration-300 rounded-r-lg z-50 group pointer-events-auto">
+            <div class="w-[2px] h-1 bg-slate-400/80 rounded-full group-hover:bg-brand-500 transition-colors"></div>
+            <div class="w-[2px] h-1 bg-slate-400/80 rounded-full group-hover:bg-brand-500 transition-colors"></div>
+            <div class="w-[2px] h-1 bg-slate-400/80 rounded-full group-hover:bg-brand-500 transition-colors"></div>
+        </div>
+
+        <div class="px-2 pb-6 flex items-center gap-4 shrink-0 pointer-events-auto">
+            <div class="w-12 h-12 rounded-[1.2rem] bg-brand-500 shadow-[inset_0_2px_4px_rgba(255,255,255,0.4),_0_12px_24px_-6px_rgba(99,102,241,0.5)] flex items-center justify-center text-white">
+                <i data-lucide="layers" class="w-6 h-6"></i>
+            </div>
+            <h1 class="font-black text-2xl text-slate-800 tracking-tighter">WMS Pro</h1>
+        </div>
+        
+        <div class="px-2 py-4 mb-4 shrink-0 pointer-events-auto">
+            <div class="flex justify-between items-end mb-3 text-[10px] font-black text-slate-400 uppercase tracking-widest">
+                <span>总作业进度</span><span class="text-brand-600 font-mono text-xs" id="sidebar-progress-text">0 / 0</span>
+            </div>
+            <div class="w-full bg-[#d8dee8] shadow-neu-pressed h-2.5 rounded-full overflow-hidden p-[2px]">
+                <div id="sidebar-progress-bar" class="bg-gradient-to-r from-brand-400 to-brand-600 h-full rounded-full transition-all duration-500 ease-out shadow-[0_0_12px_rgba(99,102,241,0.5)]" style="width: 0%"></div>
+            </div>
+        </div>
+
+        <div id="task-list-container" class="flex-1 overflow-y-auto no-scrollbar space-y-3 px-1 pb-10 pointer-events-auto relative"></div>
+    </aside>
+
+    <main class="flex-1 h-full relative z-[5] flex flex-col overflow-hidden">
+        
+        <!-- 2D Map View -->
+        <div id="view-2d-map" class="absolute inset-0 z-50 flex flex-col items-center justify-center transition-opacity duration-500">
+            <div class="absolute bottom-28 sm:bottom-20 right-6 sm:right-12 z-50 flex flex-col gap-4 mb-[env(safe-area-inset-bottom)] transition-all duration-300">
+                <button onclick="mapFocusCurrent()" class="w-12 h-12 sm:w-14 sm:h-14 glass-panel text-slate-600 rounded-full flex items-center justify-center hover:text-brand-600 hover:-translate-y-1 transition-all pointer-events-auto interactive-btn group" title="重新聚焦"><i data-lucide="crosshair" class="w-5 h-5 group-active:scale-90"></i></button>
+                <div class="flex flex-col glass-panel rounded-[1.2rem] sm:rounded-[1.5rem] overflow-hidden pointer-events-auto">
+                    <button onclick="mapZoom(1)" class="w-12 h-12 sm:w-14 sm:h-14 flex items-center justify-center text-slate-600 hover:text-brand-600 transition-all group interactive-btn"><i data-lucide="plus" class="w-5 h-5 group-active:scale-90"></i></button>
+                    <button onclick="mapZoom(-1)" class="w-12 h-12 sm:w-14 sm:h-14 flex items-center justify-center text-slate-600 hover:text-brand-600 transition-all group interactive-btn"><i data-lucide="minus" class="w-5 h-5 group-active:scale-90"></i></button>
+                </div>
+            </div>
+            
+            <div id="map-container" class="w-full h-full relative z-10 flex items-center justify-center"></div>
+
+            <div id="empty-state-overlay" class="absolute inset-0 flex items-center justify-center z-20 bg-[#e0e5ec]/50 backdrop-blur-sm transition-all duration-500 pointer-events-auto px-4">
+                <div class="glass-panel rounded-[2rem] sm:rounded-[2.5rem] p-8 sm:p-12 flex flex-col items-center max-w-[90%] sm:max-w-md w-full hover:-translate-y-2 transition-transform duration-700">
+                    <div class="w-20 h-20 rounded-[1.5rem] bg-[#e0e5ec] shadow-neu-pressed border border-white/40 flex items-center justify-center text-brand-500 mb-8">
+                        <i data-lucide="file-spreadsheet" class="w-10 h-10"></i>
+                    </div>
+                    <h2 class="text-2xl font-black text-slate-800 mb-3 tracking-tighter text-center">导入空间清单</h2>
+                    <p class="text-[11px] text-slate-500 font-bold mb-10 uppercase tracking-widest text-center">请上传带有位置矩阵信息的 Excel 数据</p>
+                    <button onclick="document.getElementById('excel-upload').click()" class="w-full bg-brand-500 text-white py-4.5 sm:py-5 rounded-[1.5rem] font-black text-base sm:text-lg tracking-wide shadow-[inset_0_2px_4px_rgba(255,255,255,0.4),_0_15px_30px_-10px_rgba(99,102,241,0.5)] active:scale-[0.98] transition-all flex justify-center items-center gap-3 border border-transparent">
+                        <i data-lucide="upload" class="w-5 h-5"></i> 解析文件资产
+                    </button>
+                </div>
+            </div>
+
+            <div id="start-job-overlay" class="absolute inset-x-0 bottom-28 sm:bottom-20 mb-[env(safe-area-inset-bottom)] z-50 hidden pointer-events-auto flex flex-col items-center justify-end gap-4 px-4 transition-all duration-300">
+                <div id="preload-panel" class="w-full max-w-[90%] sm:max-w-md glass-panel rounded-[1.5rem] p-5 flex flex-col gap-4 transform translate-y-4 opacity-0 transition-all duration-700 delay-100">
+                    <div class="flex justify-between items-center px-1">
+                        <span class="text-[11px] font-bold text-slate-500 uppercase tracking-widest flex items-center gap-1.5"><i data-lucide="box" class="w-3.5 h-3.5"></i> 空间模型预加载</span>
+                        <span id="preload-status-text" class="text-xs font-mono font-black text-brand-600">0 / 0</span>
+                    </div>
+                    <div class="w-full bg-[#d8dee8] rounded-full h-2.5 overflow-hidden shadow-neu-pressed p-[2px]">
+                        <div id="preload-progress-bar" class="bg-gradient-to-r from-brand-400 to-brand-600 h-full rounded-full w-0 transition-all duration-300 ease-out"></div>
+                    </div>
+                    <button id="btn-preload" onclick="startPreload()" class="w-full bg-white/50 hover:bg-white/80 text-brand-600 py-3.5 rounded-[1rem] font-bold text-sm shadow-[0_8px_16px_-8px_rgba(99,102,241,0.3)] active:shadow-neu-pressed transition-all flex items-center justify-center gap-2 border border-white/80">
+                        <i data-lucide="cloud-download" class="w-4 h-4"></i> 构建全息资产缓存
+                    </button>
+                </div>
+
+                <button onclick="startGuidance()" class="w-full max-w-[90%] sm:max-w-md bg-brand-500 text-white py-4.5 sm:py-5 rounded-[2rem] text-base sm:text-lg font-black tracking-tight shadow-[inset_0_2px_4px_rgba(255,255,255,0.4),_0_20px_40px_-10px_rgba(99,102,241,0.5)] active:scale-[0.96] transition-all flex items-center justify-center gap-3">
+                    <i data-lucide="rocket" class="w-5 h-5"></i> 启动空间作业
+                </button>
+            </div>
+        </div>
+
+        <!-- 3D Picking View (修复事件穿透) -->
+        <div id="view-3d-picking" class="absolute inset-0 z-20 hidden pointer-events-none">
+            
+            <!-- 将事件专门绑定在这个背景墙层，彻底避免和上面按钮打架 -->
+            <div id="layer1-bg-wall" class="absolute inset-0 z-10 pointer-events-auto touch-none">
+                <div id="cabinet-wall-container">
+                    <div id="cabinet-view" class="swipe-container">
+                        <div id="swipe-layer-current" class="swipe-slide"></div>
+                        <div id="swipe-layer-next" class="swipe-slide hidden"></div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="absolute inset-0 z-20 pointer-events-none" style="background: radial-gradient(circle at 50% 65%, rgba(163, 177, 198, 0.25) 0%, transparent 40%);"></div>
+
+            <div id="layer2-3d-hologram" class="absolute inset-0 z-30 flex items-center justify-center overflow-hidden dynamic-ui pointer-events-none touch-none">
+                <div id="part-3d-viewer" class="w-full h-full z-20 pointer-events-none"></div>
+            </div>
+
+            <div class="absolute inset-0 z-50">
+                <div id="model-loader-ui" class="absolute inset-0 flex flex-col items-center justify-center hidden pointer-events-none">
+                    <div class="w-16 h-16 rounded-[1.5rem] bg-[#e0e5ec] shadow-neu-pressed border border-white/80 flex items-center justify-center mb-4">
+                        <i data-lucide="loader-2" class="w-8 h-8 animate-spin text-brand-600"></i>
+                    </div>
+                </div>
+
+                <!-- 交互动作区：已将整体向上移动 (bottom-[25vh])，并分配顶层事件响应权 -->
+                <div class="absolute right-6 bottom-8 sm:right-10 sm:bottom-10 mb-[env(safe-area-inset-bottom)] flex flex-col items-center gap-4 pointer-events-auto z-[999] transition-all duration-300">
+                    <button onclick="adjustQuantity(1)" class="interactive-btn group relative flex items-center justify-center w-14 h-14 rounded-full bg-[#e0e5ec] shadow-neu-btn border border-white/80 text-slate-600 hover:text-brand-600 cursor-pointer">
+                        <i data-lucide="plus" class="w-5 h-5 transition-transform group-hover:scale-110 pointer-events-none"></i>
+                    </button>
+                    <button onclick="adjustQuantity(-1)" class="interactive-btn group relative flex items-center justify-center w-14 h-14 rounded-full bg-[#e0e5ec] shadow-neu-btn border border-white/80 text-slate-600 hover:text-brand-600 cursor-pointer">
+                        <i data-lucide="minus" class="w-5 h-5 transition-transform group-hover:scale-110 pointer-events-none"></i>
+                    </button>
+                    
+                    <div class="w-8 h-[2px] bg-slate-300/60 my-1 rounded-full pointer-events-none"></div>
+                    
+                    <button onclick="reportShortage()" class="interactive-btn group relative flex items-center justify-center w-14 h-14 rounded-full bg-[#e0e5ec] shadow-neu-btn border border-white/80 text-red-400 hover:text-red-500 cursor-pointer">
+                        <i data-lucide="triangle-alert" class="w-5 h-5 transition-transform group-hover:scale-110 pointer-events-none"></i>
+                    </button>
+
+                    <!-- 交互锁 (Interaction Lock) -->
+                    <button id="interaction-lock-btn" onclick="toggleInteractionLock()" class="interactive-btn group relative flex items-center justify-center w-14 h-14 rounded-full bg-[#e0e5ec] shadow-neu-btn border border-white/80 text-slate-600 hover:text-brand-600 mt-1 transition-all duration-300 cursor-pointer">
+                        <i data-lucide="unlock" class="w-5 h-5 transition-transform group-hover:scale-110 pointer-events-none"></i>
+                    </button>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <!-- 修复后的归档报告界面 (删除了重复的无效标签，应用了极致拟态质感) -->
+    <div id="job-log-overlay" class="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/30 backdrop-blur-sm hidden opacity-0 transition-opacity duration-500 pointer-events-auto">
+        <div class="bg-[#e0e5ec] w-[95%] sm:w-[92%] max-w-4xl max-h-[85vh] rounded-[2rem] sm:rounded-[2.5rem] shadow-neu-flat border border-white/80 flex flex-col overflow-hidden transform scale-95 transition-transform duration-700" id="job-log-modal">
+            <div class="p-6 sm:p-8 border-b border-white/40 flex justify-between items-center bg-[#e0e5ec]">
+                <div class="flex items-center gap-5">
+                    <div class="w-14 h-14 rounded-[1.5rem] bg-emerald-500 text-white flex items-center justify-center shadow-[inset_0_2px_4px_rgba(255,255,255,0.4),_0_12px_24px_-6px_rgba(16,185,129,0.5)]"><i data-lucide="check-check" class="w-6 h-6"></i></div>
+                    <div>
+                        <h2 class="text-2xl sm:text-3xl font-black text-slate-800 tracking-tighter">作业已完成</h2>
+                        <p id="log-summary-text" class="text-[11px] font-bold text-slate-500 uppercase tracking-widest mt-1">--</p>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="flex-1 overflow-y-auto no-scrollbar relative p-5 sm:p-8 bg-[#e0e5ec]">
+                <table class="w-full text-left border-collapse">
+                    <thead class="sticky top-0 bg-[#e0e5ec]/90 backdrop-blur-xl z-10 shadow-neu-pressed rounded-xl overflow-hidden border border-white/30">
+                        <tr>
+                            <th class="py-4 px-4 sm:px-6 text-[10px] font-black text-slate-500 uppercase tracking-widest rounded-tl-xl rounded-bl-xl">颗粒资产名称</th>
+                            <th class="py-4 px-4 sm:px-6 text-[10px] font-black text-slate-500 uppercase tracking-widest hidden sm:table-cell">物理位置</th>
+                            <th class="py-4 px-4 sm:px-6 text-[10px] font-black text-slate-500 uppercase tracking-widest text-center">实际 / 目标</th>
+                            <th class="py-4 px-4 sm:px-6 text-[10px] font-black text-slate-500 uppercase tracking-widest text-center rounded-tr-xl rounded-br-xl">状态追踪</th>
+                        </tr>
+                    </thead>
+                    <tbody id="log-table-body" class="divide-y divide-white/40"></tbody>
+                </table>
+            </div>
+            
+            <div class="p-5 sm:p-6 border-t border-white/40 bg-[#e0e5ec] flex justify-center">
+                <button id="btn-archive" onclick="archiveJob()" class="h-14 w-full sm:w-80 rounded-[1.5rem] bg-brand-500 text-white shadow-[inset_0_2px_4px_rgba(255,255,255,0.4),_0_12px_24px_-6px_rgba(99,102,241,0.5)] font-black tracking-wide active:scale-95 transition-all text-base flex justify-center items-center gap-3 border border-brand-400">
+                    <i data-lucide="archive" class="w-5 h-5"></i> 确认云端同步
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        function showToast(msg, isError = false) {
+            const t = document.createElement('div');
+            t.className = `fixed top-12 left-1/2 -translate-x-1/2 px-6 py-4 rounded-[1.5rem] font-bold text-[13px] glass-panel z-[9999] transition-all duration-500 transform translate-y-[-30px] opacity-0 flex items-center gap-3 ${isError ? 'bg-red-50/90 text-red-600 border-red-200' : 'text-slate-700'}`;
+            t.innerHTML = `${isError ? '<i data-lucide="triangle-alert" class="w-4 h-4"></i>' : '<i data-lucide="info" class="w-4 h-4 text-brand-500"></i>'} <span>${msg}</span>`;
+            document.body.appendChild(t);
+            if (window.lucide) lucide.createIcons();
+            requestAnimationFrame(() => { t.classList.remove('translate-y-[-30px]', 'opacity-0'); t.classList.add('translate-y-0', 'opacity-100'); });
+            setTimeout(() => {
+                t.classList.remove('translate-y-0', 'opacity-100'); t.classList.add('translate-y-[-30px]', 'opacity-0');
+                setTimeout(() => t.remove(), 500);
+            }, 3000);
+        }
+
+        const state = { 
+            pickingTasks: [], isGuiding: false, currentTaskIndex: -1, mainView: 'map', 
+            jobStartTime: null, sidebarOpen: false, isAnimating: false, currentCabinetId: null,
+            queryID: null, drawingName: '未知图纸', modelsPreloaded: false,
+            interactionLocked: false // 补充：交互锁状态
+        };
+
+        window.GlobalModelCache = {}; 
+        window.GlobalModelIdCache = {}; 
+        window.GlobalLocationCache = {}; 
+
+        function disposeThreeObject(obj) {
+            if (obj) {
+                obj.traverse(child => {
+                    if (child.isMesh) {
+                        if (child.geometry) child.geometry.dispose();
+                        if (child.material) {
+                            if (Array.isArray(child.material)) {
+                                child.material.forEach(m => { if (m.map) m.map.dispose(); m.dispose(); });
+                            } else {
+                                if (child.material.map) child.material.map.dispose();
+                                child.material.dispose();
+                            }
+                        }
+                    }
+                });
+            }
+        }
+
+        function generateCabinets() {
+            const cabinets = [];
+            const createCab = (id, numId, type, x, y) => ({ id, displayId: (type === 'large' ? '大柜' : '小柜') + numId, type, x, y, rows: type === 'large' ? 10 : 15, cols: type === 'large' ? 3 : 5 });
+            const rightS = [{ id: 20, y: 1 }, { id: 19, y: 2 }, { id: 18, y: 4 }, { id: 17, y: 5 }, { id: 16, y: 6 }, { id: 15, y: 7 }, { id: 14, y: 9 }, { id: 13, y: 10 }, { id: 12, y: 11 }, { id: 11, y: 12 }, { id: 10, y: 14 }, { id: 9, y: 15 }, { id: 8, y: 16 }, { id: 7, y: 17 }, { id: 6, y: 19 }, { id: 5, y: 20 }, { id: 4, y: 21 }, { id: 3, y: 22 }, { id: 2, y: 27 }, { id: 1, y: 28 }];
+            rightS.forEach(c => cabinets.push(createCab(`S-${c.id}`, `${c.id}`, 'small', 4, c.y)));
+            for (let i = 1; i <= 10; i++) cabinets.push(createCab(`L-${i}`, `${i}`, 'large', 0, 11 - i));
+            cabinets.push(createCab('S-21', '21', 'small', 0, 14)); cabinets.push(createCab('S-22', '22', 'small', 0, 19)); cabinets.push(createCab('S-23', '23', 'small', 0, 20)); cabinets.push(createCab('S-24', '24', 'small', 0, 25)); cabinets.push(createCab('S-25', '25', 'small', 0, 26));
+            return cabinets;
+        }
+
+        const CABINETS = generateCabinets();
+        const ENTRANCE = { x: 2, y: 30 }; 
+
+        // 按 UUID 批量查询库位（用于 filepath/parseQMFile 流程）
+        // Design_Itempicker 中 UUID 字段格式为 ["0"]，需用 JSON_CONTAINS 或 LIKE 处理
+        async function batchFetchByUUIDs(uuidCountMap) {
+            const uuids = Object.keys(uuidCountMap);
+            if (!uuids || uuids.length === 0) return;
+            const API_ENDPOINT = 'https://stateless.unity.cn/release/2e87e2f7-8488-4b42-9a17-a4dce04e1ec3/CloudPath';
+            for (let i = 0; i < uuids.length; i += 200) {
+                const chunk = uuids.slice(i, i + 200);
+                // UUID 字段格式为 ["0"]，使用 LIKE 子句匹配：WHERE UUID LIKE '%"0"%'
+                const likeConditions = chunk.map(() => 'UUID LIKE ?').join(' OR ');
+                const queryParams = chunk.map(u => `%"${u}"%`);
+                const query = `SELECT 颗粒名称, UUID, 位置, 柜体 FROM Design_Itempicker WHERE ${likeConditions}`;
+                try {
+                    const res = await fetch(API_ENDPOINT, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ action: 'dbOperation', query: query, queryParams: queryParams })
+                    });
+                    const data = await res.json();
+                    (data.data || data.result || []).forEach(record => {
+                        const partName = record['颗粒名称']; if (!partName) return;
+                        // 解析 UUID 字段（格式可能为 ["0"] 或 "0" 或 0）
+                        let uuidVal = record['UUID'];
+                        if (typeof uuidVal === 'string' && uuidVal.startsWith('[')) {
+                            try { const parsed = JSON.parse(uuidVal.replace(/'/g, '"')); if (Array.isArray(parsed) && parsed.length > 0) uuidVal = String(parsed[0]); } catch(e) {}
+                        } else if (Array.isArray(uuidVal) && uuidVal.length > 0) {
+                            uuidVal = String(uuidVal[0]);
+                        } else {
+                            uuidVal = String(uuidVal);
+                        }
+                        if (uuidVal) window.GlobalModelIdCache[partName] = uuidVal;
+                        if (record['位置'] || record['柜体']) {
+                            window.GlobalLocationCache[partName] = { loc: record['位置'] || '', type: record['柜体'] || '' };
+                        }
+                    });
+                } catch (e) { console.error("batchFetchByUUIDs API Error:", e); }
+            }
+        }
+
+        async function batchFetchCloudModelIds(partNames) {
+            if (!partNames || partNames.length === 0) return;
+            const API_ENDPOINT = 'https://stateless.unity.cn/release/2e87e2f7-8488-4b42-9a17-a4dce04e1ec3/CloudPath';
+            for (let i = 0; i < partNames.length; i += 200) {
+                const chunk = partNames.slice(i, i + 200);
+                const query = `SELECT 颗粒名称, UUID, 位置, 柜体 FROM Design_Itempicker WHERE 颗粒名称 IN (${chunk.map(()=>'?').join(',')})`;
+                try {
+                    const res = await fetch(API_ENDPOINT, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'dbOperation', query: query, queryParams: chunk }) });
+                    const data = await res.json();
+                    (data.data || data.result || []).forEach(record => {
+                        const partName = record['颗粒名称']; if (!partName) return;
+                        let uuidVal = record['UUID'];
+                        if (typeof uuidVal === 'string' && uuidVal.startsWith('[')) { try { const parsed = JSON.parse(uuidVal.replace(/'/g, '"')); if (Array.isArray(parsed) && parsed.length > 0) uuidVal = parsed[0]; } catch(e) {} } else if (Array.isArray(uuidVal) && uuidVal.length > 0) { uuidVal = uuidVal[0]; }
+                        if (uuidVal) window.GlobalModelIdCache[partName] = String(uuidVal);
+                        if (record['位置'] || record['柜体']) { window.GlobalLocationCache[partName] = { loc: record['位置'] || '', type: record['柜体'] || '' }; }
+                    });
+                } catch (e) { console.error("API Error:", e); }
+            }
+        }
+
+        async function fetchCloudModelId(partName) {
+            if (window.GlobalModelIdCache[partName]) return window.GlobalModelIdCache[partName];
+            await batchFetchCloudModelIds([partName]); return window.GlobalModelIdCache[partName] || null;
+        }
+
+        function parseDbLocation(cacheData) {
+            if (!cacheData || (!cacheData.loc && !cacheData.type)) return { cabId: '未分配', row: 0, col: 0, rawStr: '暂无库位信息' };
+            const locStr = String(cacheData.loc).trim(), typeStr = String(cacheData.type).trim();
+            const isLarge = typeStr === '大' || locStr.includes('大') || locStr.toUpperCase().startsWith('L');
+            const nums = locStr.match(/\d+/g);
+            if (nums && nums.length >= 3) return { cabId: `${isLarge ? 'L' : 'S'}-${nums[0]}`, row: parseInt(nums[1], 10), col: parseInt(nums[2], 10), rawStr: `${isLarge ? '大柜' : '小柜'} ${locStr}` };
+            return { cabId: '未分配', row: 0, col: 0, rawStr: `位置异常: ${typeStr} ${locStr}` };
+        }
+
+        async function parseRecordData(record) {
+            const extractFieldText = (fieldData) => {
+                if (!fieldData) return ''; if (typeof fieldData === 'string') return fieldData;
+                if (Array.isArray(fieldData)) return fieldData.map(item => typeof item === 'object' ? (item.text || '') : String(item)).join('');
+                if (typeof fieldData === 'object') return fieldData.text || ''; return String(fieldData);
+            };
+
+            const drawingName = extractFieldText(record.fields['图纸名称']) || '未知图纸'; state.drawingName = drawingName; 
+            const listData = record.fields['颗粒列表'] || record.fields['拾件列表']; const listStr = extractFieldText(listData) || '[]';
+            
+            let rawList = [];
+            try { rawList = JSON.parse(listStr.replace(/[\u200B-\u200D\uFEFF]/g, '').trim()); } catch (err) { showToast("云端清单数据格式异常，无法解析", true); return; }
+
+            const partNames = rawList.map(part => part['启蒙件名称'] || part['颗粒名称'] || part['零件名称'] || part['name'] || '未知颗粒');
+            const uniqueParts = [...new Set(partNames)];
+            await batchFetchCloudModelIds(uniqueParts); 
+
+            let newTasks = [];
+            rawList.forEach(part => {
+                const partName = part['启蒙件名称'] || part['颗粒名称'] || part['零件名称'] || part['name'] || '未知颗粒';
+                const qty = part['用量'] || part['数量'] || part['qty'] || 1;
+                let dbLocData = window.GlobalLocationCache[partName] || { loc: part['位置'] || part['库位'] || '', type: part['柜体'] || part['type'] || '' };
+                const loc = parseDbLocation(dbLocData);
+                let finalCabId = '未分配', displayCab = '未分配';
+                if (loc.cabId && loc.cabId !== '未分配') { const cab = CABINETS.find(c => c.id === loc.cabId); if (cab) { finalCabId = cab.id; displayCab = cab.displayId; } }
+
+                newTasks.push({ id: Math.random().toString(36).substr(2), cabinetId: finalCabId, displayCab: displayCab, rawInput: loc.rawStr, quantity: parseInt(qty) || 1, originalQuantity: parseInt(qty) || 1, row: loc.row || 1, col: loc.col || 1, partName: partName, isShortage: false, rawPartObj: part });
+            });
+
+            if (newTasks.length > 0) {
+                state.pickingTasks = newTasks; state.modelsPreloaded = false; 
+                document.getElementById('empty-state-overlay').classList.add('hidden');
+                document.getElementById('start-job-overlay').classList.remove('hidden');
+                setTimeout(() => document.getElementById('preload-panel').classList.remove('translate-y-4', 'opacity-0'), 50);
+
+                const btn = document.getElementById('btn-preload');
+                if(btn) { btn.disabled = false; btn.className = "w-full bg-white/50 hover:bg-white/80 text-brand-600 py-3.5 rounded-[1rem] font-bold text-sm shadow-[0_8px_16px_-8px_rgba(99,102,241,0.3)] active:shadow-neu-pressed transition-all flex items-center justify-center gap-2 border border-white/80"; btn.innerHTML = `<i data-lucide="cloud-download" class="w-4 h-4"></i> 构建全息资产缓存`; }
+                document.getElementById('preload-progress-bar').style.width = '0%'; document.getElementById('preload-status-text').innerText = `0 / ${uniqueParts.length}`;
+
+                updateUI('up'); showToast(`成功解析图纸数据: ${drawingName}`);
+            } else { showToast("未在云端列表中找到有效颗粒数据", true); }
+        }
+
+        async function fetchRecordFromURL() {
+            const urlParams = new URLSearchParams(window.location.search); const rawID = urlParams.get('ID'); if (!rawID) return;
+            state.queryID = rawID.replace(/[\u200B-\u200D\uFEFF\s]/g, '').trim(); 
+
+            try {
+                showToast("检测到作业ID，正在拉取云端清单...");
+                const API_ENDPOINT = 'https://stateless.unity.cn/release/2e87e2f7-8488-4b42-9a17-a4dce04e1ec3/CloudPath';
+                const response = await fetch(API_ENDPOINT, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'getRecords', BitableUUID: 'BitableUUID084', filter: { conjunction: "and", conditions: [{ field_name: "ID", operator: "contains", value: [state.queryID] }] } }) });
+                const data = await response.json();
+                let items = data.data?.items || data.data || data.result?.items || data.result || (Array.isArray(data)?data:[]);
+                if (items.length > 0) await parseRecordData(items[0]); 
+                else showToast('云端拉取异常：未在多维表中找到该作业 ID', true);
+            } catch (e) { showToast('网络请求失败，请检查网络后刷新重试', true); }
+        }
+
+        async function fetchRecordFromFilepath(filepath) {
+            try {
+                showToast("检测到文件路径，正在解析 QM 文件...");
+                const API_ENDPOINT = 'https://stateless.unity.cn/release/2e87e2f7-8488-4b42-9a17-a4dce04e1ec3/CloudPath';
+
+                // Step 1：调用云函数解析 QM 文件，获取 granuleCountMap: { uuid: count }
+                const parseRes = await fetch(API_ENDPOINT, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ action: 'parseQMFile', qmUrl: filepath })
+                });
+                const parseData = await parseRes.json();
+                if (!parseData.success) { showToast('QM 文件解析失败：' + (parseData.message || '未知错误'), true); return; }
+
+                const granuleCountMap = parseData.data; // { uuid: count, ... }
+                if (!granuleCountMap || Object.keys(granuleCountMap).length === 0) {
+                    showToast('QM 文件中未找到颗粒数据', true); return;
+                }
+
+                // Step 2：按 UUID 批量查询颗粒名称和库位
+                await batchFetchByUUIDs(granuleCountMap);
+
+                // Step 3：构建 uuid → partName 反向映射（batchFetchByUUIDs 已填充 GlobalModelIdCache）
+                const uuidToPartName = {};
+                for (const [partName, uuid] of Object.entries(window.GlobalModelIdCache)) {
+                    uuidToPartName[uuid] = partName;
+                }
+
+                // Step 4：构建 pickingTasks
+                let newTasks = [];
+                for (const [uuid, count] of Object.entries(granuleCountMap)) {
+                    const partName = uuidToPartName[uuid];
+                    if (!partName) { console.warn('UUID 未命中颗粒名称:', uuid); continue; }
+                    const qty = parseInt(count) || 1;
+                    const dbLocData = window.GlobalLocationCache[partName] || { loc: '', type: '' };
+                    const loc = parseDbLocation(dbLocData);
+                    let finalCabId = '未分配', displayCab = '未分配';
+                    if (loc.cabId && loc.cabId !== '未分配') {
+                        const cab = CABINETS.find(c => c.id === loc.cabId);
+                        if (cab) { finalCabId = cab.id; displayCab = cab.displayId; }
+                    }
+                    newTasks.push({
+                        id: Math.random().toString(36).substr(2),
+                        cabinetId: finalCabId, displayCab: displayCab,
+                        rawInput: loc.rawStr, quantity: qty, originalQuantity: qty,
+                        row: loc.row || 1, col: loc.col || 1,
+                        partName: partName, isShortage: false, rawPartObj: null
+                    });
+                }
+
+                if (newTasks.length > 0) {
+                    state.pickingTasks = newTasks;
+                    state.drawingName = filepath.split('/').pop() || 'QM文件';
+                    state.modelsPreloaded = false;
+                    document.getElementById('empty-state-overlay').classList.add('hidden');
+                    document.getElementById('start-job-overlay').classList.remove('hidden');
+                    setTimeout(() => document.getElementById('preload-panel').classList.remove('translate-y-4', 'opacity-0'), 50);
+                    const btn = document.getElementById('btn-preload');
+                    if (btn) {
+                        btn.disabled = false;
+                        btn.className = "w-full bg-white/50 hover:bg-white/80 text-brand-600 py-3.5 rounded-[1rem] font-bold text-sm shadow-[0_8px_16px_-8px_rgba(99,102,241,0.3)] active:shadow-neu-pressed transition-all flex items-center justify-center gap-2 border border-white/80";
+                        btn.innerHTML = `<i data-lucide="cloud-download" class="w-4 h-4"></i> 构建全息资产缓存`;
+                    }
+                    document.getElementById('preload-progress-bar').style.width = '0%';
+                    document.getElementById('preload-status-text').innerText = `0 / ${newTasks.length}`;
+                    updateUI('up');
+                    showToast(`成功解析 QM 文件：共 ${newTasks.length} 种颗粒`);
+                } else {
+                    showToast('未能从 QM 文件中解析出有效颗粒库位数据', true);
+                }
+            } catch (e) {
+                console.error(e);
+                showToast('QM 文件处理失败，请检查网络或文件格式', true);
+            }
+        }
+
+        function handleExcelUpload(e) {
+            const file = e.target.files[0]; if (!file) return;
+            if (typeof XLSX === 'undefined') { showToast("解析引擎仍在加载中，请稍候再试", true); return; }
+
+            const reader = new FileReader();
+            reader.onload = function(evt) {
+                const workbook = XLSX.read(new Uint8Array(evt.target.result), {type: 'array'});
+                const rows = XLSX.utils.sheet_to_json(workbook.Sheets[workbook.Sheets["拾件器"] ? "拾件器" : workbook.SheetNames[0]], {header: 1});
+
+                let newTasks = [];
+                for (let i = 1; i < rows.length; i++) {
+                    const row = rows[i]; if (!row || row.length === 0) continue;
+                    const qty = parseInt(row[1]) || 1; const partName = row[2] || "未知物件";
+                    const locStr = String(row[3] || row[5] || "").trim(); if (!locStr) continue;
+                    const isLarge = !!row[5];
+
+                    const match = locStr.match(/^(\d+)[柜-]?(\d+)-(\d+)$/);
+                    if (match) {
+                        const cabId = `${isLarge ? "L" : "S"}-${match[1]}`; const cab = CABINETS.find(c => c.id === cabId);
+                        if (cab) newTasks.push({ id: Math.random().toString(36).substr(2), cabinetId: cabId, displayCab: cab.displayId, quantity: qty, originalQuantity: qty, row: parseInt(match[2]), col: parseInt(match[3]), partName: partName, isShortage: false });
+                    }
+                }
+
+                if (newTasks.length > 0) {
+                    state.pickingTasks = newTasks;
+                    document.getElementById('empty-state-overlay').classList.add('hidden');
+                    document.getElementById('start-job-overlay').classList.remove('hidden');
+                    setTimeout(() => document.getElementById('preload-panel').classList.remove('translate-y-4', 'opacity-0'), 50);
+                    updateUI('up'); document.getElementById('preload-status-text').innerText = `0 / ${[...new Set(newTasks.map(t => t.partName))].length}`;
+                } else showToast("未在文件中找到有效的位置数据，请检查格式！", true);
+                document.getElementById('excel-upload').value = '';
+            };
+            reader.readAsArrayBuffer(file);
+        }
+
+        async function startPreload() {
+            const btn = document.getElementById('btn-preload'); btn.disabled = true;
+            btn.innerHTML = `<i data-lucide="loader-2" class="w-4 h-4 animate-spin"></i> 模型数据建立中...`; btn.classList.add('opacity-80');
+            if (window.lucide) lucide.createIcons();
+
+            const uniqueParts = [...new Set(state.pickingTasks.map(t => t.partName))]; const total = uniqueParts.length; let loaded = 0;
+            await batchFetchCloudModelIds(uniqueParts);
+
+            for (const partName of uniqueParts) {
+                if (!window.GlobalModelCache[partName]) {
+                    const uuid = await fetchCloudModelId(partName);
+                    if (uuid) {
+                        const CDN = 'https://a.unity.cn/client_api/v1/buckets/181aa46a-4b2b-41d9-9765-38454415dee3/content/简模/';
+                        let raw = null;
+                        try { raw = await loadModelAsset(`${CDN}${uuid}.obj`, 'obj'); } catch(e1) { try { raw = await loadModelAsset(`${CDN}${uuid}.fbx`, 'fbx'); } catch(e2) {} }
+                        if (raw) window.GlobalModelCache[partName] = processRawModel(raw, partName);
+                    }
+                }
+                loaded++;
+                document.getElementById('preload-progress-bar').style.width = `${(loaded / total) * 100}%`;
+                document.getElementById('preload-status-text').innerText = `${loaded} / ${total}`;
+            }
+
+            btn.innerHTML = `<i data-lucide="check" class="w-4 h-4"></i> 资产加载就绪`;
+            btn.className = "w-full glass-panel text-emerald-600 py-3.5 rounded-[1rem] font-bold text-sm border border-emerald-100/50 flex items-center justify-center gap-2 opacity-100";
+            if (window.lucide) lucide.createIcons(); showToast("所有模型已预先缓存，体验极致顺滑！");
+        }
+
+        function loadModelAsset(url, type) { return new Promise((resolve, reject) => { if(typeof THREE === 'undefined') reject("Three.js not loaded"); else new (type === 'obj' ? THREE.OBJLoader : THREE.FBXLoader)().load(url, resolve, undefined, reject); }); }
+
+        function processRawModel(rawModel, partName) {
+            if(typeof THREE === 'undefined') return new THREE.Group();
+            const baseColors = [0x6366f1, 0x10b981, 0xf43f5e, 0xf59e0b, 0x8b5cf6, 0x0ea5e9];
+            let hash = 0; for (let j = 0; j < partName.length; j++) hash = partName.charCodeAt(j) + ((hash << 5) - hash);
+            const customMat = new THREE.MeshStandardMaterial({ color: baseColors[Math.abs(hash) % baseColors.length], metalness: 0.2, roughness: 0.1, clearcoat: 0.8 });
+            rawModel.traverse(child => { if (child.isMesh) child.material = customMat; });
+            const box = new THREE.Box3().setFromObject(rawModel); if (box.isEmpty()) return new THREE.Group();
+            rawModel.position.sub(box.getCenter(new THREE.Vector3()));
+            const wrapper = new THREE.Group(); wrapper.add(rawModel);
+            const size = box.getSize(new THREE.Vector3()); const maxDim = Math.max(size.x, size.y, size.z);
+            if (maxDim > 0 && isFinite(maxDim)) { let targetSize = maxDim > 10.0 ? 4.0 : (maxDim < 0.2 ? 1.2 : Math.sqrt(maxDim) * 1.8); wrapper.scale.setScalar(targetSize / maxDim); }
+            return wrapper;
+        }
+
+        // ================= 3D Engine =================
+        const viewer3D = { scene: null, camera: null, renderer: null, controls: null, activeWrapper: null, labelGroup: null, currentSession: 0, currentPart: null };
+        let targetWallRotX = 8, targetWallRotY = -18, targetWallOffsetY = 0, targetWallOffsetX = 0; 
+        let currentWallRotX = 8, currentWallRotY = -18, currentWallOffsetY = 0, currentWallOffsetX = 0;
+
+        function init3DPartViewer() {
+            if (typeof THREE === 'undefined') return;
+            const container = document.getElementById('part-3d-viewer');
+            if (!container) return;
+            
+            viewer3D.scene = new THREE.Scene();
+            viewer3D.camera = new THREE.PerspectiveCamera(35, container.clientWidth / container.clientHeight, 0.1, 100);
+            viewer3D.camera.position.set(0, 3.5, 20); 
+            viewer3D.renderer = new THREE.WebGLRenderer({ alpha: true, antialias: true });
+            viewer3D.renderer.setSize(container.clientWidth, container.clientHeight);
+            viewer3D.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
+            container.appendChild(viewer3D.renderer.domElement);
+            
+            if(THREE.OrbitControls) {
+                viewer3D.controls = new THREE.OrbitControls(viewer3D.camera, viewer3D.renderer.domElement);
+                viewer3D.controls.enableDamping = true; viewer3D.controls.dampingFactor = 0.05;
+                viewer3D.controls.minDistance = 8; viewer3D.controls.maxDistance = 50; 
+                viewer3D.controls.enablePan = false; viewer3D.controls.enableZoom = true;
+                viewer3D.controls.enabled = state.interactionLocked; // 根据初始锁状态设置
+            }
+
+            viewer3D.scene.add(new THREE.AmbientLight(0xffffff, 0.9));
+            const dir = new THREE.DirectionalLight(0xffffff, 0.6); dir.position.set(5, 10, 7); viewer3D.scene.add(dir); 
+            const dir2 = new THREE.DirectionalLight(0xffffff, 0.4); dir2.position.set(-5, 5, -7); viewer3D.scene.add(dir2);
+
+            const wallContainerEl = document.getElementById('cabinet-wall-container');
+
+            const animate = () => {
+                requestAnimationFrame(animate); 
+                if (state.mainView === 'cabinet') {
+                    currentWallRotX += (targetWallRotX - currentWallRotX) * 0.05; currentWallRotY += (targetWallRotY - currentWallRotY) * 0.05;
+                    currentWallOffsetY += (targetWallOffsetY - currentWallOffsetY) * 0.05; currentWallOffsetX += (targetWallOffsetX - currentWallOffsetX) * 0.05;
+                    
+                    if (wallContainerEl) wallContainerEl.style.transform = `rotateX(${currentWallRotX.toFixed(2)}deg) rotateY(${currentWallRotY.toFixed(2)}deg) translateZ(-50px) translateY(${currentWallOffsetY.toFixed(2)}vh) translateX(${currentWallOffsetX.toFixed(2)}vw)`;
+                    
+                    // 当未锁定时模型自动旋转；锁定时停止自转以便用户手动交互
+                    if (viewer3D.activeWrapper && !state.interactionLocked) {
+                        viewer3D.activeWrapper.rotation.y += 0.005;
+                    }
+
+                    if (viewer3D.controls && viewer3D.controls.enabled) viewer3D.controls.update();
+                    viewer3D.renderer.render(viewer3D.scene, viewer3D.camera);
+                }
+            };
+            animate();
+
+            new ResizeObserver(() => {
+                if (container.clientWidth > 0 && container.clientHeight > 0 && viewer3D.camera) {
+                    viewer3D.camera.aspect = container.clientWidth / container.clientHeight;
+                    viewer3D.camera.updateProjectionMatrix(); viewer3D.renderer.setSize(container.clientWidth, container.clientHeight);
+                }
+            }).observe(container);
+        }
+
+        function createVolumetricText(text, isShortage) {
+            const canvas = document.createElement('canvas');
+            canvas.width = 1024; canvas.height = 256;
+            const ctx = canvas.getContext('2d');
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            
+            ctx.font = "900 110px 'Noto Sans SC', 'Inter', sans-serif";
+            ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+            ctx.lineWidth = 18; ctx.strokeStyle = '#ffffff';
+            ctx.strokeText(text, canvas.width/2, 128);
+            
+            const gradient = ctx.createLinearGradient(0, 40, 0, 216);
+            if (isShortage) { gradient.addColorStop(0, '#f87171'); gradient.addColorStop(1, '#dc2626'); } 
+            else { gradient.addColorStop(0, '#818cf8'); gradient.addColorStop(1, '#4f46e5'); }
+            ctx.fillStyle = gradient; ctx.fillText(text, canvas.width/2, 128);
+
+            const tex = new THREE.CanvasTexture(canvas);
+            tex.anisotropy = 4; tex.minFilter = THREE.LinearFilter;
+            
+            const mat = new THREE.MeshStandardMaterial({ map: tex, transparent: true, alphaTest: 0.1, side: THREE.FrontSide, roughness: 0.2, metalness: 0.1 });
+            const geo = new THREE.PlaneGeometry(8, 2);
+            const group = new THREE.Group();
+            
+            const layers = 15; const depth = 0.015;
+            for(let i = 0; i < layers; i++) {
+                const mesh = new THREE.Mesh(geo, mat);
+                mesh.position.z = (i - layers/2) * depth;
+                group.add(mesh);
+            }
+            const backMesh = new THREE.Mesh(geo, mat); backMesh.position.z = (-layers/2) * depth - 0.01; backMesh.rotation.y = Math.PI;
+            group.add(backMesh);
+            return group;
+        }
+
+        async function render3DPreviewAsync(partName, initialQty, isShortage, direction = 'up') {
+            if (!partName || typeof THREE === 'undefined') return;
+            if (!viewer3D.scene) init3DPartViewer(); if (!viewer3D.scene) return;
+            const session = ++viewer3D.currentSession;
+            const loaderUi = document.getElementById('model-loader-ui');
+
+            if (viewer3D.activeWrapper) {
+                const oldWrapper = viewer3D.activeWrapper;
+                viewer3D.activeWrapper = null; 
+                if (viewer3D.controls) viewer3D.controls.enabled = false;
+                
+                const flyDist = 25; const targetY = direction === 'up' ? flyDist : -flyDist;
+                new TWEEN.Tween(oldWrapper.position).to({ y: targetY }, 250).easing(TWEEN.Easing.Cubic.In).start();
+                new TWEEN.Tween(oldWrapper.scale).to({ x: 0.1, y: 0.1, z: 0.1 }, 250).easing(TWEEN.Easing.Cubic.In).onComplete(() => {
+                    viewer3D.scene.remove(oldWrapper); 
+                    disposeThreeObject(oldWrapper);
+                }).start();
+            }
+
+            if (viewer3D.camera && viewer3D.controls) {
+                new TWEEN.Tween(viewer3D.camera.position).to({ x: 0, y: 3.5, z: 20 }, 800).easing(TWEEN.Easing.Cubic.Out).start();
+                new TWEEN.Tween(viewer3D.controls.target).to({ x: 0, y: 0, z: 0 }, 800).easing(TWEEN.Easing.Cubic.Out).onUpdate(() => viewer3D.controls.update()).start();
+            }
+
+            await new Promise(r => setTimeout(r, 250)); if (session !== viewer3D.currentSession) return;
+            loaderUi.classList.remove('hidden');
+
+            const newWrapper = new THREE.Group(); newWrapper.isTaskWrapper = true; 
+            let physicalModel = new THREE.Group(); physicalModel.scale.setScalar(1.4); newWrapper.add(physicalModel);
+            viewer3D.activeWrapper = newWrapper; jumpHologramPosition();
+            
+            const flyDist = 25; viewer3D.scene.add(newWrapper);
+            newWrapper.position.y = direction === 'up' ? -flyDist : flyDist; newWrapper.scale.set(0.1, 0.1, 0.1);
+            new TWEEN.Tween(newWrapper.position).to({ y: 0 }, 400).easing(TWEEN.Easing.Back.Out).start();
+            new TWEEN.Tween(newWrapper.scale).to({ x: 1, y: 1, z: 1 }, 400).easing(TWEEN.Easing.Back.Out).onComplete(() => { if (viewer3D.controls) viewer3D.controls.enabled = state.interactionLocked; }).start();
+
+            if (!window.GlobalModelCache[partName]) {
+                const uuid = await fetchCloudModelId(partName);
+                if (session !== viewer3D.currentSession) return;
+                if (uuid) {
+                    const CDN = 'https://a.unity.cn/client_api/v1/buckets/181aa46a-4b2b-41d9-9765-38454415dee3/content/简模/';
+                    let raw = null;
+                    try { await new Promise(r => setTimeout(r, 50)); raw = await loadModelAsset(`${CDN}${uuid}.obj`, 'obj'); } 
+                    catch(e1) { try { await new Promise(r => setTimeout(r, 50)); raw = await loadModelAsset(`${CDN}${uuid}.fbx`, 'fbx'); } catch(e2) {} }
+                    if (session !== viewer3D.currentSession) return;
+                    if (raw) window.GlobalModelCache[partName] = processRawModel(raw, partName);
+                }
+            }
+            if (session !== viewer3D.currentSession) return;
+
+            let loadedMesh = window.GlobalModelCache[partName] ? window.GlobalModelCache[partName].clone() : new THREE.Mesh(new THREE.BoxGeometry(2, 1.2, 1), new THREE.MeshStandardMaterial({ color: 0x94a3b8 }));
+            physicalModel.add(loadedMesh);
+
+            const label3D = createVolumetricText(`${partName}  x  ${initialQty}`, isShortage);
+            label3D.position.y = -1; // 从底部升起
+            newWrapper.add(label3D); 
+            viewer3D.labelGroup = label3D;
+            
+            // 确保文字悬浮在固定的上方位置 (绝对Y轴3.8左右位置)
+            new TWEEN.Tween(label3D.position).to({ y: 3.8 }, 400).easing(TWEEN.Easing.Cubic.Out).start();
+
+            const targetScale = loadedMesh.scale.clone(); loadedMesh.scale.setScalar(0.001);
+            new TWEEN.Tween(loadedMesh.scale).to({ x: targetScale.x, y: targetScale.y, z: targetScale.z }, 600).easing(TWEEN.Easing.Elastic.Out).start();
+
+            if (session === viewer3D.currentSession) loaderUi.classList.add('hidden');
+        }
+
+        function update3DQuantity(qty, isShortage) {
+            if (viewer3D.activeWrapper && viewer3D.labelGroup && typeof TWEEN !== 'undefined') {
+                const oldLabel = viewer3D.labelGroup;
+                const currentY = oldLabel.position.y;
+                
+                const newLabel = createVolumetricText(`${viewer3D.currentPart}  x  ${qty}`, isShortage);
+                newLabel.position.y = currentY; // 保持固定高度
+                
+                viewer3D.activeWrapper.remove(oldLabel);
+                disposeThreeObject(oldLabel);
+                
+                viewer3D.activeWrapper.add(newLabel);
+                viewer3D.labelGroup = newLabel;
+                
+                newLabel.scale.setScalar(0.6); 
+                new TWEEN.Tween(newLabel.scale).to({ x: 1, y: 1, z: 1 }, 600).easing(TWEEN.Easing.Elastic.Out).start();
+            }
+        }
+
+        // ================= 2D Map Control =================
+        const mapState = { viewBox: { x: -40, y: -50, w: 340, h: 1080 }, isDragging: false, lastX: 0, lastY: 0, startX: 0, startY: 0, needsFocus: true, clickTarget: null };
+        function mapZoom(dir) { const zoom = dir > 0 ? 0.75 : 1.33; const cx = mapState.viewBox.x + mapState.viewBox.w / 2; const cy = mapState.viewBox.y + mapState.viewBox.h / 2; mapState.viewBox.w *= zoom; mapState.viewBox.h *= zoom; mapState.viewBox.x = cx - mapState.viewBox.w / 2; mapState.viewBox.y = cy - mapState.viewBox.h / 2; const svgEl = document.querySelector('#map-container svg'); if(svgEl) { svgEl.style.transition = 'viewBox 0.5s cubic-bezier(0.16, 1, 0.3, 1)'; svgEl.setAttribute('viewBox', `${mapState.viewBox.x} ${mapState.viewBox.y} ${mapState.viewBox.w} ${mapState.viewBox.h}`); } }
+        function mapFocusCurrent() { mapState.needsFocus = true; renderMap(); }
+
+        function renderMap() {
+            const container = document.getElementById('map-container'); if(!container) return;
+            const toSvg = (x, y) => ({ cx: x * 30 + 60, cy: y * 30 + 20 });
+            let pathSvg = '', activeTargets = [], cx = 130, cy = 500, hasTarget = false;
+            
+            const uniqueCabVisits = []; if (state.pickingTasks.length > 0) state.pickingTasks.forEach(t => { if (!uniqueCabVisits.includes(t.cabinetId)) uniqueCabVisits.push(t.cabinetId); });
+            let currentCabIdx = -1;
+            if (state.isGuiding && uniqueCabVisits.length > 0) {
+                const currentTask = state.pickingTasks[state.currentTaskIndex]; const currentCabId = currentTask ? currentTask.cabinetId : null;
+                currentCabIdx = uniqueCabVisits.indexOf(currentCabId); if (currentCabIdx === -1) currentCabIdx = 0;
+
+                for (let i = 0; i < uniqueCabVisits.length; i++) {
+                    const pCab = i === 0 ? null : CABINETS.find(c => c.id === uniqueCabVisits[i-1]); const cCab = CABINETS.find(c => c.id === uniqueCabVisits[i]); if (!cCab) continue;
+                    let startPoint = i === 0 ? toSvg(ENTRANCE.x, ENTRANCE.y) : toSvg(pCab.x > 2 ? pCab.x - 1 : pCab.x + 1, pCab.y); let endPoint = toSvg(cCab.x > 2 ? cCab.x - 1 : cCab.x + 1, cCab.y);
+                    const m1 = toSvg(2, i === 0 ? ENTRANCE.y : pCab.y); const m2 = toSvg(2, cCab.y);
+
+                    let strokeColor = "#cbd5e1", strokeWidth = "2.5", strokeDash = "6 6", isCurrent = false;
+                    if (i < currentCabIdx) { strokeColor = "#10b981"; strokeWidth = "3.5"; strokeDash = "none"; } else if (i === currentCabIdx) { strokeColor = "#3b82f6"; strokeWidth = "4.5"; strokeDash = "8 6"; isCurrent = true; }
+                    pathSvg += `<polyline points="${startPoint.cx},${startPoint.cy} ${m1.cx},${m1.cy} ${m2.cx},${m2.cy} ${endPoint.cx},${endPoint.cy}" fill="none" stroke="${strokeColor}" stroke-width="${strokeWidth}" stroke-dasharray="${strokeDash}" ${isCurrent ? 'class="flowing-path"' : 'opacity="0.8"'} stroke-linejoin="round" stroke-linecap="round" />`;
+
+                    if (Math.abs(m1.cy - m2.cy) > 10) { const isDown = m2.cy > m1.cy; const arrowY = m1.cy + (m2.cy - m1.cy) * 0.5; const arrowX = m1.cx; const arrowPath = isDown ? `M ${arrowX-4} ${arrowY-5} L ${arrowX} ${arrowY+3} L ${arrowX+4} ${arrowY-5}` : `M ${arrowX-4} ${arrowY+5} L ${arrowX} ${arrowY-3} L ${arrowX+4} ${arrowY+5}`; pathSvg += `<path d="${arrowPath}" fill="none" stroke="${strokeColor}" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>`; }
+                }
+
+                if (currentCabId) { const currCab = CABINETS.find(c => c.id === currentCabId); if (currCab) { hasTarget = true; const tPos = toSvg(currCab.x, currCab.y); cx = tPos.cx; cy = tPos.cy; activeTargets.push(currCab); const sPos = toSvg(2, currCab.y); pathSvg += `<circle cx="${sPos.cx}" cy="${sPos.cy}" r="6" fill="#3b82f6" />`; } }
+            }
+
+            const zSvg = (x,y,w,h,l) => { const tl=toSvg(x,y), br=toSvg(x+w,y+h); return `<rect x="${tl.cx}" y="${tl.cy}" width="${br.cx-tl.cx}" height="${br.cy-tl.cy}" fill="#f1f5f9" stroke="#cbd5e1" stroke-width="2" rx="8"/><text x="${tl.cx+(br.cx-tl.cx)/2}" y="${tl.cy+(br.cy-tl.cy)/2}" font-size="14" font-weight="900" fill="#94a3b8" text-anchor="middle" dominant-baseline="middle" letter-spacing="2" ${w<h?`transform="rotate(90, ${tl.cx+(br.cx-tl.cx)/2}, ${tl.cy+(br.cy-tl.cy)/2})"`:''}>${l}</text>`; };
+            const bgSvg = `<defs><pattern id="dotGrid" width="30" height="30" patternUnits="userSpaceOnUse"><circle cx="15" cy="15" r="1.5" fill="#cbd5e1"/></pattern></defs><rect x="-5000" y="-5000" width="10000" height="10000" fill="url(#dotGrid)"/>${zSvg(-4.8,0.5,4.3,10.5,"产品设计")}${zSvg(-4.8,12.5,4.3,3,"茶水间")}${zSvg(-4.8,17.5,4.3,9,"研发二组")}${zSvg(4.5,0.5,5,28.5,"测试区域")}`;
+
+            const cabsSvg = CABINETS.map(cab => {
+                const pos = toSvg(cab.x, cab.y), w = cab.type === 'large' ? 56 : 42, h = cab.type === 'large' ? 26 : 20, isTgt = activeTargets.find(t => t.id === cab.id);
+                const rA = isTgt ? `fill="#eff6ff" stroke="#3b82f6" stroke-width="2.5" filter="drop-shadow(0 8px 16px rgba(59,130,246,0.3))"` : `fill="#ffffff" stroke="#cbd5e1" stroke-width="1.5" filter="drop-shadow(0 4px 10px rgba(0,0,0,0.03))"`;
+                const tA = `fill="${cab.type === 'large' ? '#ef4444' : '#64748b'}" font-weight="${isTgt?'900':'700'}" font-size="${cab.type === 'large' ? (isTgt?'14':'12') : (isTgt?'11':'10')}"`;
+                let sequenceBadge = ''; const cabIdx = uniqueCabVisits.indexOf(cab.id);
+                if (cabIdx !== -1) { let badgeBg = "#94a3b8"; if (state.isGuiding) { if (cabIdx < currentCabIdx) badgeBg = "#10b981"; else if (cabIdx === currentCabIdx) badgeBg = "#3b82f6"; } sequenceBadge = `<circle cx="${pos.cx + w/2 + 2}" cy="${pos.cy - h/2 - 2}" r="8" fill="${badgeBg}" stroke="#fff" stroke-width="2"/><text x="${pos.cx + w/2 + 2}" y="${pos.cy - h/2 - 2}" fill="#fff" font-size="9" font-weight="900" text-anchor="middle" dominant-baseline="central">${cabIdx + 1}</text>`; }
+                return `${isTgt?`<rect x="${pos.cx-w/2}" y="${pos.cy-h/2}" width="${w}" height="${h}" rx="6" fill="none" stroke="#60a5fa" stroke-width="2"><animate attributeName="stroke-width" values="2; 8; 2" dur="1.5s" repeatCount="indefinite"/><animate attributeName="stroke-opacity" values="1; 0; 0" dur="1.5s" repeatCount="indefinite"/></rect>`:''}<g class="${isTgt?'cabinet-target cursor-pointer':''}"><rect x="${pos.cx-w/2}" y="${pos.cy-h/2}" width="${w}" height="${h}" rx="6" ${rA} style="transition: all 0.4s ease;" /><text x="${pos.cx}" y="${pos.cy}" text-anchor="middle" dominant-baseline="central" pointer-events="none" ${tA}>${cab.displayId}</text>${sequenceBadge}</g>`;
+            }).join('');
+
+            let svgEl = container.querySelector('svg');
+            if (!svgEl) {
+                container.innerHTML = `<svg width="100%" height="100%" preserveAspectRatio="xMidYMid slice" style="touch-action:none; user-select:none;"></svg>`; svgEl = container.querySelector('svg');
+                svgEl.addEventListener('pointerdown', e => { if(state.mainView !== 'map') return; mapState.isDragging = true; mapState.lastX = e.clientX; mapState.lastY = e.clientY; mapState.startX = e.clientX; mapState.startY = e.clientY; mapState.clickTarget = e.target; svgEl.setPointerCapture(e.pointerId); svgEl.style.cursor = 'grabbing'; svgEl.style.transition = 'none'; });
+                svgEl.addEventListener('pointermove', e => { if(state.mainView !== 'map' || !mapState.isDragging) return; const rect = svgEl.getBoundingClientRect(); mapState.viewBox.x -= (e.clientX - mapState.lastX) * (mapState.viewBox.w / rect.width); mapState.viewBox.y -= (e.clientY - mapState.lastY) * (mapState.viewBox.h / rect.height); mapState.lastX = e.clientX; mapState.lastY = e.clientY; svgEl.setAttribute('viewBox', `${mapState.viewBox.x} ${mapState.viewBox.y} ${mapState.viewBox.w} ${mapState.viewBox.h}`); });
+                svgEl.addEventListener('pointerup', e => { if(state.mainView !== 'map') return; mapState.isDragging = false; svgEl.releasePointerCapture(e.pointerId); svgEl.style.cursor = 'grab'; svgEl.style.transition = 'viewBox 0.5s cubic-bezier(0.16,1,0.3,1)'; if(Math.abs(e.clientX - mapState.startX) < 5 && Math.abs(e.clientY - mapState.startY) < 5 && mapState.clickTarget && mapState.clickTarget.closest('.cabinet-target')) switchMainView('cabinet'); mapState.clickTarget = null; });
+            }
+            svgEl.innerHTML = `${bgSvg}${pathSvg}${cabsSvg}`;
+            
+            if (state.mainView === 'map') {
+                svgEl.style.pointerEvents = 'auto'; svgEl.style.cursor = 'grab';
+                if (mapState.needsFocus) {
+                    const rect = container.getBoundingClientRect(); mapState.viewBox.w = 550; mapState.viewBox.h = 550 * (rect.height / (rect.width || 1));
+                    const isMobile = window.innerWidth < 768; const visualOffsetX = (state.sidebarOpen && !isMobile) ? (mapState.viewBox.w * 160 / (window.innerWidth || 1)) : 0;
+                    mapState.viewBox.x = (hasTarget?cx:130) - mapState.viewBox.w/2 - visualOffsetX; mapState.viewBox.y = (hasTarget?cy:500) - mapState.viewBox.h/2 - mapState.viewBox.h*0.05; 
+                    mapState.needsFocus = false; svgEl.style.transition = 'viewBox 0.7s cubic-bezier(0.16,1,0.3,1)';
+                }
+                requestAnimationFrame(() => svgEl.setAttribute('viewBox', `${mapState.viewBox.x} ${mapState.viewBox.y} ${mapState.viewBox.w} ${mapState.viewBox.h}`));
+            } else { svgEl.style.pointerEvents = 'none'; svgEl.setAttribute('viewBox', `-40 -50 340 1080`); }
+        }
+
+        function generateGridHTML(cab, taskIndex) {
+            if (!cab) return ''; let html = '';
+            const pickedSet = new Set(); let currentCellKey = null;
+            // 自动将 taskIndex 之前的步骤视为已拣选，这也涵盖了快速跳转跳过的步骤
+            for(let i = 0; i <= taskIndex; i++) { const t = state.pickingTasks[i]; if (t && t.cabinetId === cab.id) { const key = `${t.row}-${t.col}`; if (i === taskIndex) currentCellKey = key; else pickedSet.add(key); } }
+            for(let r=1; r<=cab.rows; r++) {
+                for(let c=1; c<=cab.cols; c++) {
+                    const key = `${r}-${c}`; const isC = (key === currentCellKey); const isP = pickedSet.has(key) && !isC;
+                    let cls = "grid-cell", txt = `${r}-${c}`;
+                    if (isC) { cls += " active"; txt = `<div class="drawer-box"><div class="drawer-front"><span>${r}-${c}</span></div><div class="drawer-top"></div><div class="drawer-bottom"></div><div class="drawer-left"></div><div class="drawer-right"></div></div>`; } 
+                    else if (isP) { cls += " picked"; txt = `<div class="absolute inset-0 flex items-center justify-center text-[10px] opacity-40">${r}-${c}</div><div class="absolute z-10 text-emerald-500 bg-[#e0e5ec] shadow-neu-flat border border-white/80 rounded-full p-1"><i data-lucide="check" class="w-4 h-4"></i></div>`; }
+                    html += `<div class="${cls}">${txt}</div>`;
+                }
+            }
+            return html;
+        }
+
+        function renderNavPath(layerIdStr, taskIndex) {
+            const cabEl = document.querySelector(`#swipe-layer-${layerIdStr} .cabinet-grid`); if(!cabEl) return;
+            const oldSvg = cabEl.querySelector('.path-svg'); if(oldSvg) oldSvg.remove();
+            if(taskIndex <= 0) return; 
+            const pTask = state.pickingTasks[taskIndex - 1], cTask = state.pickingTasks[taskIndex];
+            if(!pTask || !cTask || pTask.cabinetId !== cTask.cabinetId) return;
+            const cells = cabEl.querySelectorAll('.grid-cell'), cabD = CABINETS.find(c => c.id === cTask.cabinetId); if (!cabD) return;
+            setTimeout(() => {
+                const pC = cells[(pTask.row - 1) * cabD.cols + (pTask.col - 1)], cC = cells[(cTask.row - 1) * cabD.cols + (cTask.col - 1)];
+                if (pC && cC) {
+                    const midX = (pC.offsetLeft + pC.offsetWidth/2 + cC.offsetLeft + cC.offsetWidth/2) / 2;
+                    const pathD = `M ${pC.offsetLeft + pC.offsetWidth/2} ${pC.offsetTop + pC.offsetHeight/2} C ${midX} ${pC.offsetTop + pC.offsetHeight/2}, ${midX} ${cC.offsetTop + cC.offsetHeight/2}, ${cC.offsetLeft + cC.offsetWidth/2} ${cC.offsetTop + cC.offsetHeight/2}`;
+                    const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+                    svg.setAttribute("class", "path-svg"); svg.setAttribute("width", cabEl.offsetWidth); svg.setAttribute("height", cabEl.offsetHeight);
+                    svg.innerHTML = `<path d="${pathD}" fill="none" stroke="rgba(163, 177, 198, 0.4)" stroke-width="10" stroke-linecap="round" /><path d="${pathD}" fill="none" stroke="#6366f1" stroke-width="5" stroke-linecap="round" stroke-dasharray="16 24" class="flowing-path" style="filter: drop-shadow(0 0 8px rgba(99,102,241,0.6));"/>`;
+                    cabEl.insertBefore(svg, cabEl.firstChild);
+                }
+            }, 100); 
+        }
+
+        function renderCabinetGridFull(layerId, taskIndex) {
+            const task = state.pickingTasks[taskIndex]; if(!task) return;
+            const layerEl = document.getElementById(`swipe-layer-${layerId}`); if (!layerEl) return;
+            if (task.cabinetId === '未分配') { layerEl.innerHTML = `<div class="w-full h-full flex flex-col items-center justify-center px-4"><div class="bg-[#e0e5ec] shadow-neu-flat border border-white/80 rounded-[2rem] p-10 flex flex-col items-center justify-center text-slate-600 w-full max-w-sm"><i data-lucide="package-search" class="w-20 h-20 mb-6 opacity-30 text-brand-600"></i><h3 class="text-2xl font-black text-slate-800 tracking-tight mb-2">暂无库位信息</h3><p class="text-xs font-bold text-slate-500 text-center leading-relaxed">请人工核查或直接拣选</p></div></div>`; if (window.lucide) lucide.createIcons(); return; }
+            const cab = CABINETS.find(c => c.id === task.cabinetId); if (!cab) return;
+            layerEl.innerHTML = `<div class="cabinet-grid" style="grid-template-rows: repeat(${cab.rows}, 1fr); grid-template-columns: repeat(${cab.cols}, 1fr);">${generateGridHTML(cab, taskIndex)}</div>`; if (window.lucide) lucide.createIcons(); 
+        }
+
+        // --- 交互锁核心逻辑：处理图标变化、透明度穿透与相机重置 ---
+        function toggleInteractionLock() {
+            state.interactionLocked = !state.interactionLocked;
+            const btn = document.getElementById('interaction-lock-btn');
+            const viewerContainer = document.getElementById('part-3d-viewer');
+            
+            if (state.interactionLocked) {
+                // Lock 状态：按钮凹陷（表示按住），图标变成闭合的锁，启用3D交互
+                btn.innerHTML = `<i data-lucide="lock" class="w-5 h-5 transition-transform group-hover:scale-110 pointer-events-none"></i>`;
+                btn.className = "interactive-btn group relative flex items-center justify-center w-14 h-14 rounded-full bg-[#e0e5ec] shadow-neu-pressed border border-white/30 text-brand-600 mt-1 transition-all duration-300 cursor-pointer"; 
+                
+                if (viewer3D.controls) viewer3D.controls.enabled = true;
+                if (viewerContainer) {
+                    viewerContainer.classList.remove('pointer-events-none');
+                    viewerContainer.classList.add('pointer-events-auto');
+                }
+                showToast("已锁定：可自由旋转 3D 模型");
+            } else {
+                // Unlock 状态：按钮浮起，图标变成解开的锁，启用滑动翻页
+                btn.innerHTML = `<i data-lucide="unlock" class="w-5 h-5 transition-transform group-hover:scale-110 pointer-events-none"></i>`;
+                btn.className = "interactive-btn group relative flex items-center justify-center w-14 h-14 rounded-full bg-[#e0e5ec] shadow-neu-btn border border-white/80 text-slate-600 hover:text-brand-600 mt-1 transition-all duration-300 cursor-pointer";
+                
+                if (viewer3D.controls) {
+                    viewer3D.controls.enabled = false;
+                    // 解锁时将相机平滑重置，回到最佳正面视图
+                    new TWEEN.Tween(viewer3D.camera.position).to({ x: 0, y: 3.5, z: 20 }, 500).easing(TWEEN.Easing.Cubic.Out).start();
+                    new TWEEN.Tween(viewer3D.controls.target).to({ x: 0, y: 0, z: 0 }, 500).easing(TWEEN.Easing.Cubic.Out).onUpdate(() => viewer3D.controls.update()).start();
+                }
+                if (viewerContainer) {
+                    viewerContainer.classList.remove('pointer-events-auto');
+                    viewerContainer.classList.add('pointer-events-none');
+                }
+                showToast("已解锁：支持上下滑动翻页");
+            }
+            if (window.lucide) lucide.createIcons();
+        }
+
+        function toggleSidebar(forceState = null) {
+            if (forceState !== null) { if (state.sidebarOpen === forceState) return; state.sidebarOpen = forceState; } else { state.sidebarOpen = !state.sidebarOpen; }
+            const sidebar = document.getElementById('main-sidebar'), backdrop = document.getElementById('sidebar-backdrop'), btn = document.getElementById('main-sidebar-toggle-btn'), handle = document.getElementById('sidebar-edge-handle');
+            if(state.sidebarOpen) { 
+                sidebar.classList.remove('sidebar-collapse'); if (btn) btn.innerHTML = `<i data-lucide="x" id="sidebar-icon" class="w-5 h-5 group-active:scale-90 transition-transform"></i>`;
+                backdrop.classList.remove('hidden'); if (handle) handle.classList.add('-translate-x-full'); requestAnimationFrame(() => backdrop.classList.remove('opacity-0'));
+            } else { 
+                sidebar.classList.add('sidebar-collapse'); if (btn) btn.innerHTML = `<i data-lucide="menu" id="sidebar-icon" class="w-5 h-5 group-active:scale-90 transition-transform"></i>`;
+                backdrop.classList.add('opacity-0'); if (handle) handle.classList.remove('-translate-x-full'); setTimeout(() => backdrop.classList.add('hidden'), 500);
+            }
+            if (window.lucide) lucide.createIcons();
+        }
+
+        function switchMainView(viewName) {
+            if (viewName === 'map') mapState.needsFocus = true; state.mainView = viewName;
+            const mapLayer = document.getElementById('view-2d-map'), pickingLayer = document.getElementById('view-3d-picking'), pipeline = document.getElementById('cabinet-pipeline');
+            const btn = document.getElementById('toggle-map-btn');
+            
+            if (viewName === 'map') {
+                pickingLayer.classList.add('hidden'); mapLayer.style.opacity = '1'; mapLayer.style.pointerEvents = 'auto';
+                if (state.isGuiding && pipeline) pipeline.classList.add('opacity-0');
+                btn.innerHTML = `<i data-lucide="box" class="w-5 h-5 group-active:scale-90 transition-transform"></i>`;
+            } else {
+                pickingLayer.classList.remove('hidden'); mapLayer.style.opacity = '0'; mapLayer.style.pointerEvents = 'none';
+                if (state.isGuiding && pipeline) pipeline.classList.remove('opacity-0');
+                setTimeout(() => { window.dispatchEvent(new Event('resize')); adjustCabinetWallPosition(); jumpHologramPosition(); }, 100);
+                btn.innerHTML = `<i data-lucide="map" class="w-5 h-5 group-active:scale-90 transition-transform"></i>`;
+            }
+            renderMap(); if (window.lucide) lucide.createIcons();
+        }
+
+        function toggleMainView() { switchMainView(state.mainView === 'map' ? 'cabinet' : 'map'); }
+
+        function renderSidebar() {
+            const container = document.getElementById('task-list-container'); if(!container || !state.pickingTasks.length) return; let html = '';
+            state.pickingTasks.forEach((t, idx) => {
+                const isA = state.isGuiding && idx === state.currentTaskIndex, isD = state.isGuiding && idx < state.currentTaskIndex;
+                const bC = isA ? "bg-[#e0e5ec] shadow-[inset_4px_4px_8px_rgba(163,177,198,0.3),_inset_-4px_-4px_8px_rgba(255,255,255,0.8)] border border-[#e0e5ec]" : (isD ? "opacity-50" : "bg-[#e0e5ec] shadow-neu-flat border border-white/60");
+                const nC = isA ? "bg-brand-500 shadow-[inset_0_2px_4px_rgba(255,255,255,0.4),_0_8px_16px_-4px_rgba(99,102,241,0.5)] text-white" : (isD ? "bg-[#e0e5ec] shadow-neu-pressed text-slate-400" : "bg-[#e0e5ec] shadow-neu-pressed text-slate-500");
+                html += `<div ${isA ? 'id="active-task-item"' : ''} onclick="goToTask(${idx})" class="flex items-center gap-4 p-4 rounded-[1.2rem] transition-all duration-500 ease-out cursor-pointer hover:opacity-80 active:scale-[0.98] ${bC}"><div class="w-8 h-8 rounded-xl flex items-center justify-center text-[12px] font-black shrink-0 ${nC}">${isD?'<i data-lucide="check" class="w-4 h-4"></i>':idx+1}</div><div class="flex-1 min-w-0"><div class="text-[13px] font-bold text-slate-800 truncate tracking-tight">${t.partName}</div></div><div class="font-mono text-[14px] font-black text-slate-700">x${t.quantity}</div></div>`;
+            });
+            container.innerHTML = html;
+        }
+
+        function renderCabinetPipeline() {
+            const container = document.getElementById('cabinet-pipeline'); if (!container) return;
+            if (!state.isGuiding || !state.pickingTasks.length) { container.classList.add('opacity-0'); setTimeout(()=>container.classList.add('hidden'), 500); return; }
+            container.classList.remove('hidden'); if (state.mainView === 'cabinet') container.classList.remove('opacity-0'); else container.classList.add('opacity-0');
+            
+            const p = []; state.pickingTasks.forEach(t => { if(!p.length || p[p.length-1].id !== t.cabinetId) p.push({id: t.cabinetId, name: t.displayCab}); });
+            let curIdx = p.findIndex(item => item.id === state.pickingTasks[state.currentTaskIndex]?.cabinetId); if(curIdx === -1) curIdx = 0;
+
+            let html = '';
+            p.forEach((item, idx) => {
+                const c = idx === curIdx ? "bg-brand-500 text-white shadow-[0_4px_10px_rgba(99,102,241,0.5)] transform scale-110 z-10 border border-brand-400" : (idx < curIdx ? "bg-emerald-50 text-emerald-600 shadow-neu-flat border border-white/80 opacity-80" : "bg-[#e0e5ec] text-slate-500 shadow-neu-flat border border-white/80");
+                html += `<div class="px-3 py-1.5 sm:px-5 sm:py-2.5 rounded-full text-[10px] sm:text-[11px] font-black tracking-wider transition-all duration-500 ease-out ${c} whitespace-nowrap">${item.name}</div>`;
+                if(idx < p.length - 1) html += `<div class="w-3 sm:w-6 h-[2px] ${idx<curIdx?'bg-emerald-300/80':(idx===curIdx?'bg-slate-300/80':'bg-[#e0e5ec] shadow-neu-pressed')} rounded-full shrink-0"></div>`;
+            });
+            container.innerHTML = html; setTimeout(() => { const scl = container.querySelector('.scale-110'); if(scl) scl.scrollIntoView({ inline: 'center', behavior: 'smooth' }); }, 50);
+        }
+
+        function updateUI(direction = 'up') {
+            renderMap(); renderSidebar(); renderCabinetPipeline();
+            if (state.pickingTasks.length > 0 && state.currentTaskIndex >= 0) {
+                const task = state.pickingTasks[state.currentTaskIndex];
+                document.getElementById('sidebar-progress-bar').style.width = `${Math.round(((state.currentTaskIndex + 1) / state.pickingTasks.length) * 100)}%`;
+                document.getElementById('sidebar-progress-text').innerText = `${state.currentTaskIndex + 1} / ${state.pickingTasks.length}`;
+                
+                const isShortage = task.isShortage === true;
+                if (viewer3D.currentPart !== task.partName) { viewer3D.currentPart = task.partName; render3DPreviewAsync(task.partName, task.quantity, isShortage, direction); } 
+                else { update3DQuantity(task.quantity, isShortage); }
+            }
+            if (window.lucide) lucide.createIcons(); if (state.mainView === 'cabinet') setTimeout(adjustCabinetWallPosition, 50);
+        }
+
+        function adjustQuantity(delta) { if (!state.isGuiding || !state.pickingTasks.length) return; state.pickingTasks[state.currentTaskIndex].quantity = Math.max(0, state.pickingTasks[state.currentTaskIndex].quantity + delta); updateUI('none'); }
+        function reportShortage() { if (!state.isGuiding || !state.pickingTasks.length) return; state.pickingTasks[state.currentTaskIndex].isShortage = true; updateUI('none'); showToast("已标记为缺件异常", true); setTimeout(nextGuidanceStep, 600); }
+
+        function showJobLog() {
+            state.isGuiding = false; let totItems = 0, totShort = 0, html = '';
+            state.pickingTasks.forEach(t => {
+                const isS = t.isShortage === true; if(isS) totShort++; totItems++;
+                html += `<tr class="hover:bg-white/30 transition-colors group border-b border-white/40 last:border-0"><td class="py-4 px-5 text-[13px] font-bold text-slate-800 max-w-[120px] sm:max-w-[200px] truncate">${t.partName}</td><td class="py-4 px-5 text-xs font-mono font-bold text-slate-500 hidden sm:table-cell">${t.displayCab} / ${t.row}-${t.col}</td><td class="py-4 px-5 text-center"><span class="text-sm font-black ${isS?'text-red-500':'text-slate-900'}">${t.quantity}</span> <span class="text-[10px] text-slate-400">/</span> <span class="text-xs font-bold text-slate-400">${t.originalQuantity}</span></td><td class="py-4 px-5 text-center">${isS?'<div class="inline-flex items-center gap-1.5 px-3 py-1.5 bg-red-50/80 border border-red-200 text-red-600 rounded-lg text-[10px] font-black uppercase tracking-widest"><i data-lucide="alert-circle" class="w-3 h-3"></i> 缺件</div>':'<div class="inline-flex items-center gap-1.5 px-3 py-1.5 bg-emerald-50/80 border border-emerald-200 text-emerald-600 rounded-lg text-[10px] font-black uppercase tracking-widest"><i data-lucide="check" class="w-3 h-3"></i> 正常</div>'}</td></tr>`;
+            });
+            document.getElementById('log-table-body').innerHTML = html; document.getElementById('log-summary-text').innerText = `已处理 ${totItems} 项颗粒资产 · 发现 ${totShort} 项缺件异常`;
+            document.getElementById('view-3d-picking').classList.add('hidden');
+            const pipeline = document.getElementById('cabinet-pipeline'); if (pipeline) pipeline.classList.add('hidden');
+            switchMainView('map');
+            
+            const overlay = document.getElementById('job-log-overlay'), modal = document.getElementById('job-log-modal');
+            overlay.classList.remove('hidden'); setTimeout(() => { overlay.classList.remove('opacity-0'); modal.classList.remove('scale-95'); if (window.lucide) lucide.createIcons(); }, 50);
+        }
+
+        async function submitJobReport() {
+            const API_ENDPOINT = 'https://stateless.unity.cn/release/2e87e2f7-8488-4b42-9a17-a4dce04e1ec3/CloudPath'; const payloads = [];
+            const hasVariance = state.pickingTasks.some(t => t.quantity !== t.originalQuantity);
+
+            if (state.queryID && state.queryID !== '无' && hasVariance) {
+                const updatedList = state.pickingTasks.map(t => {
+                    if (t.rawPartObj) { const updatedObj = { ...t.rawPartObj }; if ('用量' in updatedObj) updatedObj['用量'] = t.quantity; else if ('数量' in updatedObj) updatedObj['数量'] = t.quantity; else if ('qty' in updatedObj) updatedObj['qty'] = t.quantity; else updatedObj['用量'] = t.quantity; return updatedObj; }
+                    return { "启蒙件名称": t.partName, "用量": t.quantity };
+                });
+                payloads.push({ action: 'updateRecord', BitableUUID: 'BitableUUID084', filter: { conjunction: "and", conditions: [{ field_name: "ID", operator: "is", value: [state.queryID] }] }, fields: { "颗粒列表": JSON.stringify(updatedList) } });
+            }
+            payloads.push({ action: 'addRecord', BitableUUID: 'BitableUUID085', fields: { "任务描述": `${state.drawingName || '图纸1'} ID:${state.queryID || '无'}`, "完成情况": "", "类型": "捡积木归档" } });
+
+            const shortageTasks = state.pickingTasks.filter(t => t.isShortage);
+            if (shortageTasks.length > 0) {
+                const shortageNames = shortageTasks.map(t => t.partName).join('，');
+                payloads.push({ action: 'addRecord', BitableUUID: 'BitableUUID085', fields: { "任务描述": `缺件【${shortageNames}】`, "完成情况": "", "类型": "缺件提示" } });
+                payloads.push({ action: 'addRecord', BitableUUID: 'BitableUUID085', fields: { "任务描述": `补仓【${shortageNames}】`, "完成情况": "", "类型": "补仓" } });
+            }
+
+            const promises = payloads.map(payload => fetch(API_ENDPOINT, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) }).then(res => res.json()));
+            const results = await Promise.all(promises);
+            const failedResult = results.find(r => r.code !== 0 && r.code !== undefined);
+            if (failedResult) throw new Error(failedResult.msg || "接口响应错误"); 
+        }
+
+        async function archiveJob() {
+            const btn = document.getElementById('btn-archive'); const originalHTML = btn.innerHTML;
+            try {
+                btn.disabled = true; btn.innerHTML = `<i data-lucide="loader-2" class="w-5 h-5 animate-spin"></i> 云端归档同步中...`; if (window.lucide) lucide.createIcons();
+                await submitJobReport();
+                closeLogAndReset(); setTimeout(() => showToast("作业归档与云端同步已完成！系统已重置"), 600); 
+            } catch(e) { showToast("归档失败：" + e.message, true); btn.disabled = false; btn.innerHTML = originalHTML; if (window.lucide) lucide.createIcons(); }
+        }
+
+        function closeLogAndReset() {
+            const o = document.getElementById('job-log-overlay'), m = document.getElementById('job-log-modal');
+            o.classList.add('opacity-0'); m.classList.add('scale-95');
+            setTimeout(() => {
+                o.classList.add('hidden'); 
+                const btnArchive = document.getElementById('btn-archive'); if (btnArchive) { btnArchive.disabled = false; btnArchive.innerHTML = `<i data-lucide="archive" class="w-5 h-5"></i> 完成归档`; }
+                state.pickingTasks = []; state.currentTaskIndex = -1; state.isGuiding = false; state.mainView = 'map'; state.jobStartTime = null; state.sidebarOpen = false; state.isAnimating = false; state.currentCabinetId = null; state.queryID = null; state.drawingName = '未知图纸';
+                
+                if (viewer3D.activeWrapper && viewer3D.scene) viewer3D.scene.remove(viewer3D.activeWrapper);
+                disposeThreeObject(viewer3D.activeWrapper); // 深度清理内存
+                viewer3D.activeWrapper = null; viewer3D.currentPart = null;
+
+                for (const key in window.GlobalModelCache) disposeThreeObject(window.GlobalModelCache[key]);
+                window.GlobalModelCache = {}; window.GlobalModelIdCache = {};
+
+                document.getElementById('start-job-overlay').classList.add('hidden'); document.getElementById('preload-panel').classList.add('translate-y-4', 'opacity-0');
+                const btn = document.getElementById('btn-preload');
+                if (btn) { btn.disabled = false; btn.className = "w-full bg-[#e0e5ec] text-brand-600 py-3.5 rounded-[1rem] font-bold text-sm shadow-neu-btn active:shadow-neu-pressed transition-all flex items-center justify-center gap-2 border border-white/80"; btn.innerHTML = `<i data-lucide="cloud-download" class="w-4 h-4"></i> 开始预加载所有模型`; }
+                document.getElementById('preload-progress-bar').style.width = '0%'; document.getElementById('preload-status-text').innerText = '0 / 0';
+                document.getElementById('excel-upload').value = '';
+                document.getElementById('empty-state-overlay').classList.remove('hidden');
+                switchMainView('map'); updateUI('none');
+            }, 500);
+        }
+
+        function startGuidance() { 
+            if(state.pickingTasks.length){ 
+                state.pickingTasks.sort((a,b) => { const tA = a.cabinetId.split('-')[0], nA = a.cabinetId.split('-')[1]; const tB = b.cabinetId.split('-')[0], nB = b.cabinetId.split('-')[1]; if(tA!==tB) return tA==='S'?-1:1; return parseInt(nA)-parseInt(nB); });
+                state.isGuiding = true; state.jobStartTime = new Date(); 
+                document.getElementById('start-job-overlay').classList.add('hidden');
+                switchMainView('cabinet'); goToTask(0);
+                setTimeout(() => document.getElementById('task-list-container').scrollTo({top:0,behavior:'smooth'}), 100); 
+            } 
+        }
+
+        function goToTask(targetIndex) {
+            if (state.isAnimating || targetIndex === state.currentTaskIndex || targetIndex < 0) return;
+            if (targetIndex >= state.pickingTasks.length) { showJobLog(); return; }
+
+            const nextT = state.pickingTasks[targetIndex]; if (!nextT) return;
+            const isSameCab = state.currentCabinetId === nextT.cabinetId, dir = targetIndex > state.currentTaskIndex ? 'up' : 'down';
+            state.isAnimating = true; state.currentTaskIndex = targetIndex; state.currentCabinetId = nextT.cabinetId; 
+            
+            updateUI(dir);
+
+            if (isSameCab) {
+                if (nextT.cabinetId === '未分配') { renderCabinetGridFull('current', targetIndex); } 
+                else { const cabEl = document.getElementById('swipe-layer-current')?.querySelector('.cabinet-grid'); if(cabEl) { const cab = CABINETS.find(c => c.id===nextT.cabinetId); cabEl.innerHTML = generateGridHTML(cab, targetIndex); renderNavPath('current', targetIndex); if (window.lucide) lucide.createIcons(); } }
+                setTimeout(() => { const act = document.getElementById('task-list-container').querySelector('#active-task-item'); if(act) act.scrollIntoView({behavior:'smooth',block:'center'}); }, 100);
+                state.isAnimating = false;
+            } else {
+                const curL = document.getElementById('swipe-layer-current'), nexL = document.getElementById('swipe-layer-next');
+                renderCabinetGridFull('next', targetIndex); nexL.classList.remove('hidden');
+                
+                curL.style.transition = 'transform 0.5s cubic-bezier(0.55, 0.085, 0.68, 0.53), opacity 0.5s ease-in';
+                curL.style.transform = dir === 'up' ? 'translateY(-60%)' : 'translateY(60%)'; curL.style.opacity = '0';
+                nexL.style.transition = 'none'; nexL.style.transform = dir === 'up' ? 'translateY(60%)' : 'translateY(-60%)'; nexL.style.opacity = '0';
+                
+                setTimeout(() => {
+                    nexL.style.transition = 'transform 0.7s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.7s ease-out';
+                    nexL.style.transform = 'translateY(0)'; nexL.style.opacity = '1';
+                    
+                    setTimeout(() => {
+                        curL.style.transition = 'none'; curL.innerHTML = nexL.innerHTML; curL.style.transform = 'translateY(0)'; curL.style.opacity = '1';
+                        nexL.classList.add('hidden');
+                        const act = document.getElementById('task-list-container').querySelector('#active-task-item'); if(act) act.scrollIntoView({behavior:'smooth',block:'center'});
+                        state.isAnimating = false; renderNavPath('current', state.currentTaskIndex);
+                    }, 700); 
+                }, 450); 
+            }
+        }
+
+        function nextGuidanceStep() { goToTask(state.currentTaskIndex + 1); }
+        function prevGuidanceStep() { goToTask(state.currentTaskIndex - 1); }
+
+        function adjustCabinetWallPosition() {
+            const nextLayer = document.getElementById('swipe-layer-next'); const activeCell = (nextLayer && !nextLayer.classList.contains('hidden')) ? nextLayer.querySelector('.grid-cell.active') : document.querySelector('#swipe-layer-current .grid-cell.active');
+            if (!activeCell) { targetWallOffsetY = 0; targetWallOffsetX = 0; return; }
+            const cabGrid = activeCell.closest('.cabinet-grid'); if(!cabGrid) return;
+
+            const relativeX = (activeCell.offsetLeft + activeCell.offsetWidth / 2) / cabGrid.offsetWidth;
+            const relativeY = (activeCell.offsetTop + activeCell.offsetHeight / 2) / cabGrid.offsetHeight;
+            const isMobile = window.innerWidth < 768;
+            
+            targetWallOffsetY = (0.5 - relativeY) * (isMobile ? 80 : 60) + (isMobile ? -8 : -5); 
+            targetWallOffsetX = (0.5 - relativeX) * (isMobile ? 65 : 40); 
+        }
+
+        function jumpHologramPosition() {
+            const nextLayer = document.getElementById('swipe-layer-next'); const activeCell = (nextLayer && !nextLayer.classList.contains('hidden')) ? nextLayer.querySelector('.grid-cell.active') : document.querySelector('#swipe-layer-current .grid-cell.active');
+            const holoEl = document.getElementById('layer2-3d-hologram'); if (!holoEl) return;
+            const viewW = window.innerWidth; const isMobile = viewW < 768;
+
+            if (!activeCell) {
+                holoEl.style.transition = 'none'; holoEl.style.setProperty('--ui-x', `0px`); holoEl.style.setProperty('--ui-y', isMobile ? '-10vh' : '0px'); holoEl.style.setProperty('--anim-scale', isMobile ? '0.8' : '1.2');
+                void holoEl.offsetWidth; holoEl.style.transition = 'transform 0.6s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.4s ease-out'; return;
+            }
+
+            const cabGrid = activeCell.closest('.cabinet-grid'); if(!cabGrid) return;
+            const relativeX = (activeCell.offsetLeft + activeCell.offsetWidth / 2) / cabGrid.offsetWidth;
+            
+            holoEl.style.setProperty('--anim-scale', isMobile ? '0.65' : '1');
+            holoEl.style.transition = 'none';
+            holoEl.style.setProperty('--ui-x', `${relativeX < 0.5 ? (viewW * (isMobile?0.15:0.22)) : (-viewW * (isMobile?0.15:0.22))}px`);
+            holoEl.style.setProperty('--ui-y', `${isMobile ? -window.innerHeight * 0.05 : 0}px`);
+            void holoEl.offsetWidth; 
+            holoEl.style.transition = 'transform 0.6s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.4s ease-out';
+        }
+
+        function setupInteractions() {
+            // 我们现在直接将滑动判断绑定在背景墙上，彻底避免与按钮区域的事件打架！
+            const swipeArea = document.getElementById('layer1-bg-wall');
+            
+            const handleParallax = (clientX, clientY) => {
+                if (state.mainView !== 'cabinet') return;
+                targetWallRotY = Math.max(-35, Math.min(0, -18 + ((clientX / window.innerWidth - 0.5) * 2) * 25));
+                targetWallRotX = Math.max(-5, Math.min(25, 8 - ((clientY / window.innerHeight - 0.5) * 2) * 20)); 
+            };
+            window.addEventListener('mousemove', e => handleParallax(e.clientX, e.clientY));
+
+            let touchStartY = 0, touchStartX = 0, touchStartTime = 0;
+            
+            swipeArea.addEventListener('touchstart', e => { 
+                touchStartY = e.touches[0].clientY; touchStartX = e.touches[0].clientX; touchStartTime = Date.now();
+                handleParallax(touchStartX, touchStartY); 
+            }, {passive: true});
+
+            swipeArea.addEventListener('touchmove', e => { if (state.mainView === 'cabinet') handleParallax(e.touches[0].clientX, e.touches[0].clientY); }, {passive: true});
+            
+            swipeArea.addEventListener('touchend', e => {
+                if(state.mainView !== 'cabinet') return; 
+                
+                // 如果处于锁定态（允许交互 3D 模型），则阻止滑动翻页
+                if (state.interactionLocked) return;
+
+                const dy = touchStartY - e.changedTouches[0].clientY; 
+                const dx = touchStartX - e.changedTouches[0].clientX;
+                if ((Date.now() - touchStartTime) < 600 && Math.abs(dy) > 40 && Math.abs(dy) > Math.abs(dx) * 1.2) { 
+                    if (dy > 0) nextGuidanceStep(); else prevGuidanceStep(); 
+                }
+            }, {passive: true});
+        }
+
+        function initApp() {
+            if (viewer3D.scene) return; 
+            init3DPartViewer(); setupInteractions(); renderMap(); 
+            if (window.lucide) lucide.createIcons();
+            const tweenUpdate = time => { requestAnimationFrame(tweenUpdate); if (typeof TWEEN !== 'undefined') TWEEN.update(time); };
+            tweenUpdate();
+
+            const _urlP = new URLSearchParams(window.location.search);
+            if (_urlP.has('filepath')) fetchRecordFromFilepath(decodeURIComponent(_urlP.get('filepath')));
+            else if (_urlP.has('ID')) fetchRecordFromURL();
+            else renderMap();
+        }
+
+        window.addEventListener('WMSDepsLoaded', () => { if (document.readyState === 'loading') { document.addEventListener('DOMContentLoaded', initApp); } else { initApp(); } });
+        setTimeout(() => { if (!viewer3D.scene) initApp(); }, 3000);
+    </script>
+</body>
+</html>
