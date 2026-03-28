@@ -214,7 +214,7 @@
     </div>
 
     <div class="fixed bottom-28 sm:bottom-4 right-4 z-[9999] text-[10px] font-mono text-slate-400/60 pointer-events-none select-none tracking-wider transition-all duration-300">
-        Build: 2026-03-28 14:50 CST
+        Build: 2021-03-28 14:50 CST
     </div>
 
     <!-- 隐藏的文件上传域 -->
@@ -563,9 +563,7 @@
             return { cabId: '未分配', row: 0, col: 0, rawStr: `位置异常: ${typeStr} ${locStr}` };
         }
 
-      // ================= 数据解析与清洗引擎 =================
-        const parseRecordData = async (record) => {
-            // 1. 安全字段提取器：兼容多维表复杂的数据嵌套类型
+    const parseRecordData = async (record) => {
             const extractFieldText = (fieldData) => {
                 if (!fieldData) return '';
                 if (typeof fieldData === 'string') return fieldData;
@@ -584,58 +582,61 @@
             
             let rawList = [];
             try {
-                // 2. 清理不可见字符（如零宽空格）后解析 JSON
                 const cleanStr = listStr.replace(/[\u200B-\u200D\uFEFF]/g, '').trim();
                 rawList = JSON.parse(cleanStr);
             } catch (err) {
-                console.error('颗粒列表格式无法解析为标准 JSON:', err);
+                console.error('颗粒列表格式解析失败:', err);
                 showToast("云端清单数据格式异常，无法解析", true);
                 return;
             }
 
-            // 3. 提取去重名称，预加载库位与 UUID
-            const uniqueParts = [...new Set(rawList.map(part => part['启蒙件名称'] || part['颗粒名称'] || part['零件名称'] || part['name'] || '未知颗粒'))];
-            await batchFetchCloudModelIds(uniqueParts); 
+            const partNames = rawList.map(part => part['启蒙件名称'] || part['颗粒名称'] || part['零件名称'] || part['name'] || '未知颗粒');
+            await batchFetchCloudModelIds(partNames);
 
             let newTasks = [];
             rawList.forEach(part => {
-                // 兼容不同字段名
                 const partName = part['启蒙件名称'] || part['颗粒名称'] || part['零件名称'] || part['name'] || '未知颗粒';
                 const qty = part['用量'] || part['数量'] || part['qty'] || 1;
                 
                 let dbLocData = window.GlobalLocationCache[partName];
                 if (!dbLocData) {
-                    dbLocData = { loc: part['位置'] || part['库位'] || '', type: part['柜体'] || part['type'] || '' };
+                    dbLocData = {
+                        loc: part['位置'] || part['库位'] || part['location'] || '',
+                        type: part['柜体'] || part['type'] || ''
+                    };
                 }
                 
-                // 解析库位
                 const loc = parseDbLocation(dbLocData);
+                
+                // 核心修复：放宽限制，允许没有库位映射的颗粒进入队列（标记为未分配）
+                let finalCabId = '未分配';
+                let displayCab = '未分配';
+                
                 if (loc.cabId && loc.cabId !== '未分配') {
                     const cab = CABINETS.find(c => c.id === loc.cabId);
                     if (cab) {
-                        // 组装标准任务队列
-                        newTasks.push({
-                            id: Math.random().toString(36).substr(2),
-                            cabinetId: cab.id,
-                            displayCab: cab.displayId,
-                            rawInput: loc.rawStr, 
-                            quantity: parseInt(qty) || 1,
-                            originalQuantity: parseInt(qty) || 1,
-                            row: loc.row,
-                            col: loc.col,
-                            partName: partName,
-                            isShortage: false,
-                            rawPartObj: part 
-                        });
+                        finalCabId = cab.id;
+                        displayCab = cab.displayId;
                     }
                 }
+
+                newTasks.push({
+                    id: Math.random().toString(36).substr(2),
+                    cabinetId: finalCabId,
+                    displayCab: displayCab,
+                    rawInput: loc.rawStr, 
+                    quantity: parseInt(qty) || 1,
+                    originalQuantity: parseInt(qty) || 1,
+                    row: loc.row || 1,
+                    col: loc.col || 1,
+                    partName: partName,
+                    isShortage: false,
+                    rawPartObj: part 
+                });
             });
 
-            // 4. 状态更新与 UI 渲染
             if (newTasks.length > 0) {
                 state.pickingTasks = newTasks;
-                state.modelsPreloaded = false; // 重置预加载状态
-                
                 document.getElementById('empty-state-overlay').classList.add('hidden');
                 
                 const startOverlay = document.getElementById('start-job-overlay');
@@ -644,21 +645,11 @@
                     document.getElementById('preload-panel').classList.remove('translate-y-4', 'opacity-0');
                 }, 50);
 
-                // 恢复预加载 UI 的初始状态
-                const btn = document.getElementById('btn-preload');
-                if(btn) {
-                    btn.disabled = false;
-                    btn.classList.remove('opacity-80', 'bg-white/50', 'text-emerald-600', 'border-white');
-                    btn.classList.add('bg-white/50', 'text-brand-600', 'border-white', 'hover:-translate-y-0.5');
-                    btn.innerHTML = `<i data-lucide="cloud-download" class="w-4 h-4"></i> 开始预加载所有模型，拒绝卡顿`;
-                }
-                document.getElementById('preload-progress-bar').style.width = '0%';
-                document.getElementById('preload-status-text').innerText = `0 / ${uniqueParts.length}`;
-
-                updateUI('up'); // 触发 3D 和地图界面的首次更新
+                updateUI('up');
+                document.getElementById('preload-status-text').innerText = `0 / ${[...new Set(newTasks.map(t => t.partName))].length}`;
                 showToast(`成功解析图纸数据: ${drawingName}`);
             } else {
-                showToast("未在云端列表中找到有效的库位映射信息", true);
+                showToast("未在云端列表中找到有效颗粒数据", true);
             }
         };
 
@@ -1302,11 +1293,29 @@
             }, 100); 
         }
 
-        function renderCabinetGridFull(layerId, taskIndex) {
+      function renderCabinetGridFull(layerId, taskIndex) {
             const task = state.pickingTasks[taskIndex]; if(!task) return;
-            const cab = CABINETS.find(c => c.id === task.cabinetId); if (!cab) return;
             const layerEl = document.getElementById(`swipe-layer-${layerId}`);
-            if (layerEl) { layerEl.innerHTML = `<div class="cabinet-grid" style="grid-template-rows: repeat(${cab.rows}, 1fr); grid-template-columns: repeat(${cab.cols}, 1fr);">${generateGridHTML(cab, taskIndex)}</div>`; if (window.lucide) lucide.createIcons(); }
+            if (!layerEl) return;
+            
+            // 核心补充：适配未分配颗粒的专属玻璃拟态 UI
+            if (task.cabinetId === '未分配') {
+                layerEl.innerHTML = `
+                    <div class="w-full h-full flex flex-col items-center justify-center px-4">
+                        <div class="bg-white/20 backdrop-blur-3xl border border-white/40 shadow-2xl rounded-[2rem] p-10 flex flex-col items-center justify-center text-slate-600 w-full max-w-sm transform transition-all hover:scale-105">
+                            <i data-lucide="package-search" class="w-20 h-20 mb-6 opacity-30 text-brand-600"></i>
+                            <h3 class="text-2xl font-black text-slate-800 tracking-tight mb-2">暂无库位信息</h3>
+                            <p class="text-xs font-bold text-slate-500 text-center leading-relaxed">云端未为该颗粒配置确切物理位置<br/>请人工核查或直接拣选</p>
+                        </div>
+                    </div>`;
+                if (window.lucide) lucide.createIcons();
+                return;
+            }
+
+            const cab = CABINETS.find(c => c.id === task.cabinetId); 
+            if (!cab) return;
+            layerEl.innerHTML = `<div class="cabinet-grid" style="grid-template-rows: repeat(${cab.rows}, 1fr); grid-template-columns: repeat(${cab.cols}, 1fr);">${generateGridHTML(cab, taskIndex)}</div>`; 
+            if (window.lucide) lucide.createIcons(); 
         }
 
         function toggleSidebar(forceState = null) {
@@ -1669,7 +1678,7 @@
             } 
         }
 
-        function goToTask(targetIndex) {
+       function goToTask(targetIndex) {
             if (state.isAnimating || targetIndex === state.currentTaskIndex || targetIndex < 0) return;
             if (targetIndex >= state.pickingTasks.length) { showJobLog(); return; }
 
@@ -1680,8 +1689,18 @@
             updateUI(dir);
 
             if (isSameCab) {
-                const cabEl = document.getElementById('swipe-layer-current')?.querySelector('.cabinet-grid');
-                if(cabEl) { cabEl.innerHTML = generateGridHTML(CABINETS.find(c=>c.id===nextT.cabinetId), targetIndex); renderNavPath('current', targetIndex); if (window.lucide) lucide.createIcons(); }
+                if (nextT.cabinetId === '未分配') {
+                    // 核心修改：如果是连续两个未分配的颗粒，只需要重绘 UI 即可，防止执行连线导致报错
+                    renderCabinetGridFull('current', targetIndex);
+                } else {
+                    const cabEl = document.getElementById('swipe-layer-current')?.querySelector('.cabinet-grid');
+                    if(cabEl) { 
+                        const cab = CABINETS.find(c=>c.id===nextT.cabinetId);
+                        cabEl.innerHTML = generateGridHTML(cab, targetIndex); 
+                        renderNavPath('current', targetIndex); 
+                        if (window.lucide) lucide.createIcons(); 
+                    }
+                }
                 setTimeout(()=>document.getElementById('task-list-container').querySelector('#active-task-item')?.scrollIntoView({behavior:'smooth',block:'center'}), 100);
                 state.isAnimating = false;
             } else {
@@ -1709,10 +1728,17 @@
         function nextGuidanceStep() { goToTask(state.currentTaskIndex + 1); }
         function prevGuidanceStep() { goToTask(state.currentTaskIndex - 1); }
 
-        function adjustCabinetWallPosition() {
+   function adjustCabinetWallPosition() {
             const nextLayer = document.getElementById('swipe-layer-next');
             const activeCell = (nextLayer && !nextLayer.classList.contains('hidden')) ? nextLayer.querySelector('.grid-cell.active') : document.querySelector('#swipe-layer-current .grid-cell.active');
-            if (!activeCell) return;
+            
+            // 核心修改：如果没有活动的格子（例如未分配库位的颗粒），将墙面平滑归位到中央
+            if (!activeCell) {
+                targetWallOffsetY = 0; 
+                targetWallOffsetX = 0; 
+                return;
+            }
+            
             const cabGrid = activeCell.closest('.cabinet-grid'); if(!cabGrid) return;
 
             const relativeX = (activeCell.offsetLeft + activeCell.offsetWidth / 2) / cabGrid.offsetWidth;
@@ -1730,16 +1756,29 @@
         function jumpHologramPosition() {
             const nextLayer = document.getElementById('swipe-layer-next');
             const activeCell = (nextLayer && !nextLayer.classList.contains('hidden')) ? nextLayer.querySelector('.grid-cell.active') : document.querySelector('#swipe-layer-current .grid-cell.active');
-            if (!activeCell) return;
-            const cabGrid = activeCell.closest('.cabinet-grid'); if(!cabGrid) return;
-
-            const relativeX = (activeCell.offsetLeft + activeCell.offsetWidth / 2) / cabGrid.offsetWidth;
-            const relativeY = (activeCell.offsetTop + activeCell.offsetHeight / 2) / cabGrid.offsetHeight;
+            
             const holoEl = document.getElementById('layer2-3d-hologram');
             if (!holoEl) return;
             
             const viewW = window.innerWidth;
             const isMobile = viewW < 768;
+
+            // 核心修改：如果是未分配的颗粒，将 3D 模型平滑移动到画面正中央，并放大展示
+            if (!activeCell) {
+                holoEl.style.transition = 'none';
+                holoEl.style.setProperty('--ui-x', `0px`);
+                holoEl.style.setProperty('--ui-y', isMobile ? '-10vh' : '0px');
+                holoEl.style.setProperty('--anim-scale', isMobile ? '0.8' : '1.2');
+                
+                void holoEl.offsetWidth; 
+                holoEl.style.transition = 'transform 0.6s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.4s ease-out';
+                return;
+            }
+
+            const cabGrid = activeCell.closest('.cabinet-grid'); if(!cabGrid) return;
+
+            const relativeX = (activeCell.offsetLeft + activeCell.offsetWidth / 2) / cabGrid.offsetWidth;
+            const relativeY = (activeCell.offsetTop + activeCell.offsetHeight / 2) / cabGrid.offsetHeight;
             
             let targetX = 0;
             let targetY = 0;
