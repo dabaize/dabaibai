@@ -263,7 +263,8 @@
         const batchFetchCloudModelIds = async (partNames) => {
             if (!partNames || partNames.length === 0) return;
             
-            const API_ENDPOINT = 'https://stateless.unity.cn/release/2e87e2f7-8488-4b42-9a17-a4dce04e1ec3/CloudPath';
+            // 切换为测试服 URL
+            const API_ENDPOINT = 'https://stateless.unity.cn/release/7f18c0dd-4e6d-4718-8128-b7f0ddacbd45/CloudPath';
             const chunkSize = 200;
             
             for (let i = 0; i < partNames.length; i += chunkSize) {
@@ -319,7 +320,8 @@
         const batchFetchCloudDataByUuids = async (uuids) => {
             if (!uuids || uuids.length === 0) return;
             
-            const API_ENDPOINT = 'https://stateless.unity.cn/release/2e87e2f7-8488-4b42-9a17-a4dce04e1ec3/CloudPath';
+            // 切换为测试服 URL
+            const API_ENDPOINT = 'https://stateless.unity.cn/release/7f18c0dd-4e6d-4718-8128-b7f0ddacbd45/CloudPath';
             const chunkSize = 200;
             
             for (let i = 0; i < uuids.length; i += chunkSize) {
@@ -507,7 +509,8 @@
             }
 
             try {
-                const API_ENDPOINT = 'https://stateless.unity.cn/release/2e87e2f7-8488-4b42-9a17-a4dce04e1ec3/CloudPath';
+                // 切换为测试服 URL
+                const API_ENDPOINT = 'https://stateless.unity.cn/release/7f18c0dd-4e6d-4718-8128-b7f0ddacbd45/CloudPath';
                 const response = await fetch(API_ENDPOINT, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
@@ -606,7 +609,8 @@
             }
 
             try {
-                const API_ENDPOINT = 'https://stateless.unity.cn/release/2e87e2f7-8488-4b42-9a17-a4dce04e1ec3/CloudPath';
+                // 切换为测试服 URL
+                const API_ENDPOINT = 'https://stateless.unity.cn/release/7f18c0dd-4e6d-4718-8128-b7f0ddacbd45/CloudPath';
                 const response = await fetch(API_ENDPOINT, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
@@ -1836,7 +1840,8 @@
             }
 
             try {
-                const API_ENDPOINT = 'https://stateless.unity.cn/release/2e87e2f7-8488-4b42-9a17-a4dce04e1ec3/CloudPath';
+                // 切换为测试服 URL
+                const API_ENDPOINT = 'https://stateless.unity.cn/release/7f18c0dd-4e6d-4718-8128-b7f0ddacbd45/CloudPath';
                 const payloads = [];
 
                 // 1. 如果有数量调整且存在ID，则更新多维表 (updateRecord)
