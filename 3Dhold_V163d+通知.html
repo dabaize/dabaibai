@@ -398,10 +398,10 @@
             }, 3000);
         }
 
-        const state = { 
+       const state = { 
             pickingTasks: [], isGuiding: false, currentTaskIndex: -1, mainView: 'map', 
             jobStartTime: null, sidebarOpen: false, isAnimating: false, currentCabinetId: null,
-            queryID: null, drawingName: '未知图纸' 
+            queryID: null, drawingName: '未知图纸', modelsPreloaded: false
         };
 
         // 全局缓存字典
@@ -563,7 +563,9 @@
             return { cabId: '未分配', row: 0, col: 0, rawStr: `位置异常: ${typeStr} ${locStr}` };
         }
 
+      // ================= 数据解析与清洗引擎 =================
         const parseRecordData = async (record) => {
+            // 1. 安全字段提取器：兼容多维表复杂的数据嵌套类型
             const extractFieldText = (fieldData) => {
                 if (!fieldData) return '';
                 if (typeof fieldData === 'string') return fieldData;
@@ -582,37 +584,36 @@
             
             let rawList = [];
             try {
+                // 2. 清理不可见字符（如零宽空格）后解析 JSON
                 const cleanStr = listStr.replace(/[\u200B-\u200D\uFEFF]/g, '').trim();
                 rawList = JSON.parse(cleanStr);
             } catch (err) {
-                console.error('颗粒列表格式解析失败:', err);
+                console.error('颗粒列表格式无法解析为标准 JSON:', err);
                 showToast("云端清单数据格式异常，无法解析", true);
                 return;
             }
 
-            // 同步从云端拉取 UUID 与库位数据，并将两者写入缓存
-            const partNames = rawList.map(part => part['启蒙件名称'] || part['颗粒名称'] || part['零件名称'] || part['name'] || '未知颗粒');
-            await batchFetchCloudModelIds(partNames); // 替换为聚合的 batch API
+            // 3. 提取去重名称，预加载库位与 UUID
+            const uniqueParts = [...new Set(rawList.map(part => part['启蒙件名称'] || part['颗粒名称'] || part['零件名称'] || part['name'] || '未知颗粒'))];
+            await batchFetchCloudModelIds(uniqueParts); 
 
             let newTasks = [];
             rawList.forEach(part => {
+                // 兼容不同字段名
                 const partName = part['启蒙件名称'] || part['颗粒名称'] || part['零件名称'] || part['name'] || '未知颗粒';
                 const qty = part['用量'] || part['数量'] || part['qty'] || 1;
                 
-                // 从我们新集成的全能缓存中提取库位信息，如果云端没有，则使用表格内的自带数据作为降级
                 let dbLocData = window.GlobalLocationCache[partName];
                 if (!dbLocData) {
-                    dbLocData = {
-                        loc: part['位置'] || part['库位'] || part['location'] || '',
-                        type: part['柜体'] || part['type'] || ''
-                    };
+                    dbLocData = { loc: part['位置'] || part['库位'] || '', type: part['柜体'] || part['type'] || '' };
                 }
                 
+                // 解析库位
                 const loc = parseDbLocation(dbLocData);
-                // 过滤掉“未分配”的无效零件
                 if (loc.cabId && loc.cabId !== '未分配') {
                     const cab = CABINETS.find(c => c.id === loc.cabId);
                     if (cab) {
+                        // 组装标准任务队列
                         newTasks.push({
                             id: Math.random().toString(36).substr(2),
                             cabinetId: cab.id,
@@ -630,8 +631,11 @@
                 }
             });
 
+            // 4. 状态更新与 UI 渲染
             if (newTasks.length > 0) {
                 state.pickingTasks = newTasks;
+                state.modelsPreloaded = false; // 重置预加载状态
+                
                 document.getElementById('empty-state-overlay').classList.add('hidden');
                 
                 const startOverlay = document.getElementById('start-job-overlay');
@@ -640,20 +644,31 @@
                     document.getElementById('preload-panel').classList.remove('translate-y-4', 'opacity-0');
                 }, 50);
 
-                updateUI('up');
-                document.getElementById('preload-status-text').innerText = `0 / ${[...new Set(newTasks.map(t => t.partName))].length}`;
+                // 恢复预加载 UI 的初始状态
+                const btn = document.getElementById('btn-preload');
+                if(btn) {
+                    btn.disabled = false;
+                    btn.classList.remove('opacity-80', 'bg-white/50', 'text-emerald-600', 'border-white');
+                    btn.classList.add('bg-white/50', 'text-brand-600', 'border-white', 'hover:-translate-y-0.5');
+                    btn.innerHTML = `<i data-lucide="cloud-download" class="w-4 h-4"></i> 开始预加载所有模型，拒绝卡顿`;
+                }
+                document.getElementById('preload-progress-bar').style.width = '0%';
+                document.getElementById('preload-status-text').innerText = `0 / ${uniqueParts.length}`;
+
+                updateUI('up'); // 触发 3D 和地图界面的首次更新
                 showToast(`成功解析图纸数据: ${drawingName}`);
             } else {
                 showToast("未在云端列表中找到有效的库位映射信息", true);
             }
         };
 
-      const fetchRecordFromURL = async () => {
+     // ================= URL 触发器 =================
+        const fetchRecordFromURL = async () => {
             const urlParams = new URLSearchParams(window.location.search);
             const rawID = urlParams.get('ID');
             if (!rawID) return;
 
-            // 1. 极限参数净化：去除前后空格、换行符以及所有不可见零宽字符
+            // 极限参数清洗：剔除所有空白与零宽字符
             const queryID = rawID.replace(/[\u200B-\u200D\uFEFF\s]/g, '').trim();
             state.queryID = queryID; 
 
@@ -670,37 +685,21 @@
                         filter: {
                             conjunction: "and",
                             conditions: [
-                                // 2. 防御性匹配：将精确匹配 "is" 改为 "contains"，完美免疫多维表中隐形的脏数据
-                                { field_name: "ID", operator: "contains", value: [queryID] }
+                                { field_name: "ID", operator: "is", value: [queryID] }
                             ]
                         }
                     })
                 });
 
                 const data = await response.json();
-                console.log("📥 云端拉取原始响应:", data); // 如果再查不到，按 F12 看这里的输出
                 
-                // 3. 全兼容解析模型：防止代理接口的数据包裹层级发生变化
-                let items = [];
-                if (data.data && Array.isArray(data.data.items)) {
-                    items = data.data.items;
-                } else if (Array.isArray(data.data)) {
-                    items = data.data;
-                } else if (data.result && Array.isArray(data.result.items)) {
-                    items = data.result.items;
-                } else if (Array.isArray(data.result)) {
-                    items = data.result;
-                } else if (Array.isArray(data)) {
-                    items = data;
-                }
-                
-                if (items.length > 0) {
-                    // 找到了数据，取第一条进行解析
-                    const record = items[0];
+                // 严谨校验：确保 code 为 0 且数据层级完整
+                if (data.code === 0 && data.data && data.data.items && data.data.items.length > 0) {
+                    const record = data.data.items[0];
                     await parseRecordData(record); 
                 } else {
-                    console.error(`未找到对应的 Record 数据，当前净化的查询 ID 为: [${queryID}]`);
-                    showToast('云端拉取异常：未在多维表中找到该作业 ID', true);
+                    console.error(`未找到对应的 Record 数据，查询ID: [${queryID}]`, data);
+                    showToast('云端拉取异常：未找到对应的作业 ID', true);
                 }
             } catch (e) {
                 console.error('云端获取数据失败:', e);
@@ -1851,18 +1850,24 @@
             }, {passive: true});
         }
 
-        function initApp() {
+     function initApp() {
             if (viewer3D.scene) return; 
             initThreeGlobals(); 
             init3DPartViewer(); 
             setupInteractions(); 
             setupSidebarGestures(); 
-            renderMap(); 
+            
             if (window.lucide) lucide.createIcons();
             const tweenUpdate = (time) => { requestAnimationFrame(tweenUpdate); if (typeof TWEEN !== 'undefined') TWEEN.update(time); };
             tweenUpdate();
 
-            fetchRecordFromURL();
+            // 在外部依赖均加载完成后，根据 URL 参数判定初始流
+            const urlParams = new URLSearchParams(window.location.search);
+            if (urlParams.has('ID')) {
+                fetchRecordFromURL();
+            } else {
+                renderMap(); // 没有 ID 时，静默渲染空状态地图
+            }
         }
 
         window.addEventListener('WMSDepsLoaded', () => {
