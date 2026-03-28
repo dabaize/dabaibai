@@ -369,6 +369,7 @@
         window.GlobalModelCache = {}; 
         window.GlobalModelIdCache = {}; 
         window.GlobalLocationCache = {}; 
+        window.GlobalUuidToNameCache = {}; // UUID → 颗粒名称 逆向映射
 
         function disposeThreeObject(obj) {
             if (obj) {
@@ -401,45 +402,47 @@
         const CABINETS = generateCabinets();
         const ENTRANCE = { x: 2, y: 30 }; 
 
-        // 按 UUID 批量查询库位（用于 filepath/parseQMFile 流程）
-        // Design_Itempicker 中 UUID 字段格式为 ["0"]，需用 JSON_CONTAINS 或 LIKE 处理
-        async function batchFetchByUUIDs(uuidCountMap) {
-            const uuids = Object.keys(uuidCountMap);
+        // 2. 通过【UUID】批量获取数据 (用于 filepath 参数模式)
+        async function batchFetchByUUIDs(uuids) {
             if (!uuids || uuids.length === 0) return;
             const API_ENDPOINT = 'https://stateless.unity.cn/release/2e87e2f7-8488-4b42-9a17-a4dce04e1ec3/CloudPath';
-            for (let i = 0; i < uuids.length; i += 200) {
-                const chunk = uuids.slice(i, i + 200);
-                // UUID 字段格式为 ["0"]，使用 LIKE 子句匹配：WHERE UUID LIKE '%"0"%'
-                const likeConditions = chunk.map(() => 'UUID LIKE ?').join(' OR ');
-                const queryParams = chunk.map(u => `%"${u}"%`);
-                const query = `SELECT 颗粒名称, UUID, 位置, 柜体 FROM Design_Itempicker WHERE ${likeConditions}`;
+            const chunkSize = 200;
+            for (let i = 0; i < uuids.length; i += chunkSize) {
+                const chunk = uuids.slice(i, i + chunkSize);
+                const placeholders = chunk.map(() => '?').join(',');
+                const query = `SELECT 颗粒名称, UUID, 位置, 柜体 FROM Design_Itempicker WHERE UUID IN (${placeholders})`;
+                // 【核心】数据库 UUID 字段存储格式为 ["0"]，查询参数须同格式匹配
+                const formattedChunk = chunk.map(uuid => `["${uuid}"]`);
                 try {
                     const res = await fetch(API_ENDPOINT, {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ action: 'dbOperation', query: query, queryParams: queryParams })
+                        body: JSON.stringify({ action: 'dbOperation', query: query, queryParams: formattedChunk })
                     });
                     const data = await res.json();
-                    (data.data || data.result || []).forEach(record => {
-                        const partName = record['颗粒名称']; if (!partName) return;
-                        // 解析 UUID 字段（格式可能为 ["0"] 或 "0" 或 0）
+                    const records = data.data || data.result || [];
+                    records.forEach(record => {
+                        const partName = record['颗粒名称'];
                         let uuidVal = record['UUID'];
                         if (typeof uuidVal === 'string' && uuidVal.startsWith('[')) {
-                            try { const parsed = JSON.parse(uuidVal.replace(/'/g, '"')); if (Array.isArray(parsed) && parsed.length > 0) uuidVal = String(parsed[0]); } catch(e) {}
+                            try {
+                                const parsed = JSON.parse(uuidVal);
+                                if (Array.isArray(parsed) && parsed.length > 0) uuidVal = parsed[0];
+                            } catch(e) {}
                         } else if (Array.isArray(uuidVal) && uuidVal.length > 0) {
-                            uuidVal = String(uuidVal[0]);
-                        } else {
-                            uuidVal = String(uuidVal);
+                            uuidVal = uuidVal[0];
                         }
-                        if (uuidVal) window.GlobalModelIdCache[partName] = uuidVal;
-                        if (record['位置'] || record['柜体']) {
-                            window.GlobalLocationCache[partName] = { loc: record['位置'] || '', type: record['柜体'] || '' };
+                        if (partName && uuidVal) {
+                            window.GlobalModelIdCache[partName] = String(uuidVal);
+                            window.GlobalUuidToNameCache[String(uuidVal)] = partName;
+                            if (record['位置'] || record['柜体']) {
+                                window.GlobalLocationCache[partName] = { loc: record['位置'] || '', type: record['柜体'] || '' };
+                            }
                         }
                     });
-                } catch (e) { console.error("batchFetchByUUIDs API Error:", e); }
+                } catch (e) { console.error("batchFetchByUUIDs Error:", e); }
             }
         }
-
         async function batchFetchCloudModelIds(partNames) {
             if (!partNames || partNames.length === 0) return;
             const API_ENDPOINT = 'https://stateless.unity.cn/release/2e87e2f7-8488-4b42-9a17-a4dce04e1ec3/CloudPath';
@@ -537,36 +540,39 @@
                 showToast("检测到文件路径，正在解析 QM 文件...");
                 const API_ENDPOINT = 'https://stateless.unity.cn/release/2e87e2f7-8488-4b42-9a17-a4dce04e1ec3/CloudPath';
 
-                // Step 1：调用云函数解析 QM 文件，获取 granuleCountMap: { uuid: count }
-                const parseRes = await fetch(API_ENDPOINT, {
+                // Step 1：调用云函数解析 QM 文件
+                const response = await fetch(API_ENDPOINT, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ action: 'parseQMFile', qmUrl: filepath })
                 });
-                const parseData = await parseRes.json();
-                if (!parseData.success) { showToast('QM 文件解析失败：' + (parseData.message || '未知错误'), true); return; }
 
-                const granuleCountMap = parseData.data; // { uuid: count, ... }
-                if (!granuleCountMap || Object.keys(granuleCountMap).length === 0) {
-                    showToast('QM 文件中未找到颗粒数据', true); return;
+                const resData = await response.json();
+
+                // 双层解包，兼容云函数序列化字符串返回
+                let payload = resData.data || resData;
+                if (typeof payload === 'string') {
+                    try { payload = JSON.parse(payload); } catch(e) {}
+                }
+                const uuidCounts = payload.data || payload || {};
+
+                // 过滤掉非数字字段（如 success 等元字段），只保留 uuid: count 条目
+                const uniqueUuids = Object.keys(uuidCounts).filter(k => typeof uuidCounts[k] === 'number');
+
+                if (uniqueUuids.length === 0) {
+                    showToast('QM 文件中未找到颗粒数据或云端解析失败', true); return;
                 }
 
                 // Step 2：按 UUID 批量查询颗粒名称和库位
-                await batchFetchByUUIDs(granuleCountMap);
+                showToast(`正在向云端匹配 ${uniqueUuids.length} 种颗粒位置...`);
+                await batchFetchByUUIDs(uniqueUuids);
 
-                // Step 3：构建 uuid → partName 反向映射（batchFetchByUUIDs 已填充 GlobalModelIdCache）
-                const uuidToPartName = {};
-                for (const [partName, uuid] of Object.entries(window.GlobalModelIdCache)) {
-                    uuidToPartName[uuid] = partName;
-                }
-
-                // Step 4：构建 pickingTasks
+                // Step 3：构建 pickingTasks（通过 GlobalUuidToNameCache 逆向查颗粒名称）
                 let newTasks = [];
-                for (const [uuid, count] of Object.entries(granuleCountMap)) {
-                    const partName = uuidToPartName[uuid];
-                    if (!partName) { console.warn('UUID 未命中颗粒名称:', uuid); continue; }
-                    const qty = parseInt(count) || 1;
-                    const dbLocData = window.GlobalLocationCache[partName] || { loc: '', type: '' };
+                uniqueUuids.forEach(uuid => {
+                    const qty = uuidCounts[uuid];
+                    const partName = window.GlobalUuidToNameCache[uuid] || `未知颗粒(UUID:${uuid.substring(0,6)})`;
+                    const dbLocData = window.GlobalLocationCache[partName];
                     const loc = parseDbLocation(dbLocData);
                     let finalCabId = '未分配', displayCab = '未分配';
                     if (loc.cabId && loc.cabId !== '未分配') {
@@ -578,9 +584,10 @@
                         cabinetId: finalCabId, displayCab: displayCab,
                         rawInput: loc.rawStr, quantity: qty, originalQuantity: qty,
                         row: loc.row || 1, col: loc.col || 1,
-                        partName: partName, isShortage: false, rawPartObj: null
+                        partName: partName, isShortage: false, rawPartObj: null,
+                        rawUuid: uuid
                     });
-                }
+                });
 
                 if (newTasks.length > 0) {
                     state.pickingTasks = newTasks;
@@ -600,14 +607,13 @@
                     updateUI('up');
                     showToast(`成功解析 QM 文件：共 ${newTasks.length} 种颗粒`);
                 } else {
-                    showToast('未能从 QM 文件中解析出有效颗粒库位数据', true);
+                    showToast('未能从 QM 文件中匹配到有效颗粒库位数据', true);
                 }
             } catch (e) {
                 console.error(e);
                 showToast('QM 文件处理失败，请检查网络或文件格式', true);
             }
         }
-
         function handleExcelUpload(e) {
             const file = e.target.files[0]; if (!file) return;
             if (typeof XLSX === 'undefined') { showToast("解析引擎仍在加载中，请稍候再试", true); return; }
