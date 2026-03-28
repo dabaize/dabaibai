@@ -257,7 +257,9 @@
         window.GlobalModelCache = {}; 
         window.GlobalModelIdCache = {}; 
         window.GlobalLocationCache = {}; // 颗粒名称 -> { loc: 位置, type: 柜体 }
+        window.GlobalUuidToNameCache = {}; // 新增：UUID -> 颗粒名称 的反向映射缓存
 
+        // 1. 通过【颗粒名称】批量获取数据 (用于 Excel、ID参数模式)
         const batchFetchCloudModelIds = async (partNames) => {
             if (!partNames || partNames.length === 0) return;
             
@@ -267,7 +269,6 @@
             for (let i = 0; i < partNames.length; i += chunkSize) {
                 const chunk = partNames.slice(i, i + chunkSize);
                 const placeholders = chunk.map(() => '?').join(',');
-                // 聚合查询: 颗粒名称, UUID, 位置, 柜体
                 const query = `SELECT 颗粒名称, UUID, 位置, 柜体 FROM Design_Itempicker WHERE 颗粒名称 IN (${placeholders})`;
                 
                 try {
@@ -286,7 +287,6 @@
                     records.forEach(record => {
                         const partName = record['颗粒名称'];
                         if (partName) {
-                            // 处理 UUID 的 "['2587']" 格式
                             let uuidVal = record['UUID'];
                             if (typeof uuidVal === 'string' && uuidVal.startsWith('[')) {
                                 try {
@@ -296,9 +296,11 @@
                             } else if (Array.isArray(uuidVal) && uuidVal.length > 0) {
                                 uuidVal = uuidVal[0];
                             }
-                            if (uuidVal) window.GlobalModelIdCache[partName] = String(uuidVal);
+                            if (uuidVal) {
+                                window.GlobalModelIdCache[partName] = String(uuidVal);
+                                window.GlobalUuidToNameCache[String(uuidVal)] = partName;
+                            }
 
-                            // 缓存位置与柜体数据
                             if (record['位置'] || record['柜体']) {
                                 window.GlobalLocationCache[partName] = {
                                     loc: record['位置'] || '',
@@ -309,6 +311,62 @@
                     });
                 } catch (e) {
                     console.error("Batch API Fetch Error:", e);
+                }
+            }
+        };
+
+        // 2. 通过【UUID】批量获取数据 (新增：用于 filepath 参数模式)
+        const batchFetchCloudDataByUuids = async (uuids) => {
+            if (!uuids || uuids.length === 0) return;
+            
+            const API_ENDPOINT = 'https://stateless.unity.cn/release/2e87e2f7-8488-4b42-9a17-a4dce04e1ec3/CloudPath';
+            const chunkSize = 200;
+            
+            for (let i = 0; i < uuids.length; i += chunkSize) {
+                const chunk = uuids.slice(i, i + chunkSize);
+                const placeholders = chunk.map(() => '?').join(',');
+                const query = `SELECT 颗粒名称, UUID, 位置, 柜体 FROM Design_Itempicker WHERE UUID IN (${placeholders})`;
+                
+                try {
+                    const res = await fetch(API_ENDPOINT, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            action: 'dbOperation',
+                            query: query,
+                            queryParams: chunk
+                        })
+                    });
+                    const data = await res.json();
+                    const records = data.data || data.result || [];
+                    
+                    records.forEach(record => {
+                        const partName = record['颗粒名称'];
+                        let uuidVal = record['UUID'];
+                        
+                        if (typeof uuidVal === 'string' && uuidVal.startsWith('[')) {
+                            try {
+                                const parsed = JSON.parse(uuidVal);
+                                if (Array.isArray(parsed) && parsed.length > 0) uuidVal = parsed[0];
+                            } catch(e) {}
+                        } else if (Array.isArray(uuidVal) && uuidVal.length > 0) {
+                            uuidVal = uuidVal[0];
+                        }
+                        
+                        if (partName && uuidVal) {
+                            window.GlobalModelIdCache[partName] = String(uuidVal);
+                            window.GlobalUuidToNameCache[String(uuidVal)] = partName; // 逆向映射
+
+                            if (record['位置'] || record['柜体']) {
+                                window.GlobalLocationCache[partName] = {
+                                    loc: record['位置'] || '',
+                                    type: record['柜体'] || ''
+                                };
+                            }
+                        }
+                    });
+                } catch (e) {
+                    console.error("Batch Fetch By UUIDs Error:", e);
                 }
             }
         };
@@ -404,7 +462,7 @@
             updateUI();
         };
 
-        // ------------------ URL 参数获取模块 (RecordID) ------------------
+        // ------------------ URL 参数获取模块 (RecordID / filepath) ------------------
 
         // 云端数据库位置与柜体信息解析器 (解析失败则留空分配)
         const parseDbLocation = (cacheData) => {
@@ -415,10 +473,8 @@
             const locStr = String(cacheData.loc).trim();
             const typeStr = String(cacheData.type).trim();
             
-            // 判定大小柜
             const isLarge = typeStr === '大' || locStr.includes('大') || locStr.toUpperCase().startsWith('L');
             
-            // 提取位置数字 (例如 "1-2-3" 或 "1柜-2行-3列")
             const nums = locStr.match(/\d+/g);
             if (nums && nums.length >= 3) {
                 return {
@@ -429,8 +485,106 @@
                 };
             }
             
-            // 格式异常或不完整的记录留空
             return { cabId: '未分配', row: 0, col: 0, rawStr: `位置异常: ${typeStr} ${locStr}` };
+        };
+
+        // 【新增】：根据 filepath 解析并构建任务
+        const fetchQMFileFromURL = async () => {
+            const urlParams = new URLSearchParams(window.location.search);
+            const filepath = urlParams.get('filepath');
+            if (!filepath) return;
+
+            const container = document.getElementById('dashboard-container');
+            if(container) {
+                container.innerHTML = `
+                    <div class="flex flex-col items-center justify-center w-full h-full glass-panel rounded-[2rem] animate-pulse">
+                        <i data-lucide="file-json-2" class="w-12 h-12 text-brand-500 mb-4 opacity-80"></i>
+                        <h3 class="text-xl font-black text-slate-800 tracking-tight mb-1">正在解析云端模型文件...</h3>
+                        <p class="text-[10px] text-slate-400 mt-6" id="loading-status-text">正在提取颗粒数据...</p>
+                    </div>
+                `;
+                lucide.createIcons();
+            }
+
+            try {
+                const API_ENDPOINT = 'https://stateless.unity.cn/release/2e87e2f7-8488-4b42-9a17-a4dce04e1ec3/CloudPath';
+                const response = await fetch(API_ENDPOINT, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        action: 'parseQMFile',
+                        qmUrl: filepath
+                    })
+                });
+
+                const resData = await response.json();
+                
+                // 兼容不同结构的响应层级
+                const mementoes = resData.data?.mementoes || resData.mementoes || [];
+                
+                if (mementoes.length > 0) {
+                    // 1. 聚合 UUID 数量
+                    const uuidCounts = {};
+                    mementoes.forEach(mem => {
+                        const u = mem.Uuid;
+                        if (u) {
+                            uuidCounts[u] = (uuidCounts[u] || 0) + 1;
+                        }
+                    });
+
+                    const uniqueUuids = Object.keys(uuidCounts);
+                    
+                    if(document.getElementById('loading-status-text')) {
+                        document.getElementById('loading-status-text').innerText = "正在向云端匹配逆向位置与字典...";
+                    }
+
+                    // 2. 通过 UUID 批量获取 颗粒名称 和 库位
+                    await batchFetchCloudDataByUuids(uniqueUuids);
+                    console.log(`[WMS Pro] 成功逆向解析并匹配了 ${uniqueUuids.length} 种颗粒信息`);
+
+                    // 3. 构建拾取任务
+                    let newTasks = [];
+                    uniqueUuids.forEach(uuid => {
+                        const qty = uuidCounts[uuid];
+                        const partName = window.GlobalUuidToNameCache[uuid] || `未知颗粒(UUID:${uuid.substring(0,6)})`;
+                        
+                        const dbLocData = window.GlobalLocationCache[partName];
+                        const loc = parseDbLocation(dbLocData);
+                        
+                        newTasks.push({
+                            id: Math.random().toString(36).substr(2),
+                            cabinetId: loc.cabId,
+                            rawInput: loc.rawStr, 
+                            quantity: qty,
+                            originalQuantity: qty,
+                            row: loc.row,
+                            col: loc.col,
+                            partName: partName,
+                            isShortage: false,
+                            rawUuid: uuid
+                        });
+                    });
+
+                    if (newTasks.length > 0) {
+                        state.pickingTasks = newTasks;
+                        state.drawingName = filepath.split('/').pop() || '云端模型图纸';
+                        state.modelsPreloaded = false;
+                        state.isPreloading = false;
+                        state.preloadProgress = 0;
+                        updateUI();
+                    } else {
+                        alert('⚠️ 解析成功，但未提取到有效的 UUID 聚合数据！');
+                        updateUI();
+                    }
+                } else {
+                    alert('⚠️ 模型文件中没有颗粒数据或云端解析失败！');
+                    updateUI();
+                }
+            } catch (e) {
+                console.error(e);
+                alert('⚠️ 解析模型文件请求异常，请检查网络连接。');
+                updateUI();
+            }
         };
 
         const fetchRecordFromURL = async () => {
@@ -1832,7 +1986,10 @@
 
         document.addEventListener('DOMContentLoaded', () => {
             const urlParams = new URLSearchParams(window.location.search);
-            if (urlParams.has('ID')) {
+            // 优先级：先判断 filepath 模式，再判断 ID 模式
+            if (urlParams.has('filepath')) {
+                fetchQMFileFromURL();
+            } else if (urlParams.has('ID')) {
                 fetchRecordFromURL();
             } else {
                 updateUI();
