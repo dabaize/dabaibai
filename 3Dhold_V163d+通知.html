@@ -648,11 +648,13 @@
             }
         };
 
-        const fetchRecordFromURL = async () => {
+      const fetchRecordFromURL = async () => {
             const urlParams = new URLSearchParams(window.location.search);
-            const queryID = urlParams.get('ID');
-            if (!queryID) return;
+            const rawID = urlParams.get('ID');
+            if (!rawID) return;
 
+            // 1. 极限参数净化：去除前后空格、换行符以及所有不可见零宽字符
+            const queryID = rawID.replace(/[\u200B-\u200D\uFEFF\s]/g, '').trim();
             state.queryID = queryID; 
 
             try {
@@ -668,20 +670,37 @@
                         filter: {
                             conjunction: "and",
                             conditions: [
-                                { field_name: "ID", operator: "is", value: [queryID] }
+                                // 2. 防御性匹配：将精确匹配 "is" 改为 "contains"，完美免疫多维表中隐形的脏数据
+                                { field_name: "ID", operator: "contains", value: [queryID] }
                             ]
                         }
                     })
                 });
 
                 const data = await response.json();
+                console.log("📥 云端拉取原始响应:", data); // 如果再查不到，按 F12 看这里的输出
                 
-                if (data.code === 0 && data.data && data.data.items && data.data.items.length > 0) {
-                    const record = data.data.items[0];
+                // 3. 全兼容解析模型：防止代理接口的数据包裹层级发生变化
+                let items = [];
+                if (data.data && Array.isArray(data.data.items)) {
+                    items = data.data.items;
+                } else if (Array.isArray(data.data)) {
+                    items = data.data;
+                } else if (data.result && Array.isArray(data.result.items)) {
+                    items = data.result.items;
+                } else if (Array.isArray(data.result)) {
+                    items = data.result;
+                } else if (Array.isArray(data)) {
+                    items = data;
+                }
+                
+                if (items.length > 0) {
+                    // 找到了数据，取第一条进行解析
+                    const record = items[0];
                     await parseRecordData(record); 
                 } else {
-                    console.error('未找到对应的 Record 数据');
-                    showToast('云端拉取异常：未找到对应的作业 ID', true);
+                    console.error(`未找到对应的 Record 数据，当前净化的查询 ID 为: [${queryID}]`);
+                    showToast('云端拉取异常：未在多维表中找到该作业 ID', true);
                 }
             } catch (e) {
                 console.error('云端获取数据失败:', e);
