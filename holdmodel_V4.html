@@ -329,6 +329,9 @@
                 const placeholders = chunk.map(() => '?').join(',');
                 const query = `SELECT 颗粒名称, UUID, 位置, 柜体 FROM Design_Itempicker WHERE UUID IN (${placeholders})`;
                 
+                // 【核心修改】：针对多维表底层存储格式，将纯文本 0 包装为带双引号和中括号的 '["0"]' 格式
+                const formattedChunk = chunk.map(uuid => `["${uuid}"]`);
+                
                 try {
                     const res = await fetch(API_ENDPOINT, {
                         method: 'POST',
@@ -336,7 +339,7 @@
                         body: JSON.stringify({
                             action: 'dbOperation',
                             query: query,
-                            queryParams: chunk
+                            queryParams: formattedChunk // 使用格式化后的参数进行查询
                         })
                     });
                     const data = await res.json();
@@ -522,20 +525,18 @@
 
                 const resData = await response.json();
                 
-                // 兼容不同结构的响应层级
-                const mementoes = resData.data?.mementoes || resData.mementoes || [];
+                // 【优化】：直接获取云端处理好的 granuleCountMap
+                let payload = resData.data || resData;
+                // 兼容云函数底层可能存在的序列化字符串返回
+                if (typeof payload === 'string') {
+                    try { payload = JSON.parse(payload); } catch(e) {}
+                }
+                const uuidCounts = payload.data || payload || {};
                 
-                if (mementoes.length > 0) {
-                    // 1. 聚合 UUID 数量
-                    const uuidCounts = {};
-                    mementoes.forEach(mem => {
-                        const u = mem.Uuid;
-                        if (u) {
-                            uuidCounts[u] = (uuidCounts[u] || 0) + 1;
-                        }
-                    });
-
-                    const uniqueUuids = Object.keys(uuidCounts);
+                // 提取 UUID（过滤掉非数字的字段，如 success 字段等）
+                const uniqueUuids = Object.keys(uuidCounts).filter(k => typeof uuidCounts[k] === 'number');
+                
+                if (uniqueUuids.length > 0) {
                     
                     if(document.getElementById('loading-status-text')) {
                         document.getElementById('loading-status-text').innerText = "正在向云端匹配逆向位置与字典...";
