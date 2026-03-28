@@ -405,7 +405,7 @@
         // 2. 通过【UUID】批量获取数据 (用于 filepath 参数模式)
         async function batchFetchByUUIDs(uuids) {
             if (!uuids || uuids.length === 0) return;
-            const API_ENDPOINT = 'https://stateless.unity.cn/release/2e87e2f7-8488-4b42-9a17-a4dce04e1ec3/CloudPath';
+            const API_ENDPOINT = 'https://stateless.unity.cn/release/7f18c0dd-4e6d-4718-8128-b7f0ddacbd45/CloudPath';
             const chunkSize = 200;
             for (let i = 0; i < uuids.length; i += chunkSize) {
                 const chunk = uuids.slice(i, i + chunkSize);
@@ -445,7 +445,7 @@
         }
         async function batchFetchCloudModelIds(partNames) {
             if (!partNames || partNames.length === 0) return;
-            const API_ENDPOINT = 'https://stateless.unity.cn/release/2e87e2f7-8488-4b42-9a17-a4dce04e1ec3/CloudPath';
+            const API_ENDPOINT = 'https://stateless.unity.cn/release/7f18c0dd-4e6d-4718-8128-b7f0ddacbd45/CloudPath';
             for (let i = 0; i < partNames.length; i += 200) {
                 const chunk = partNames.slice(i, i + 200);
                 const query = `SELECT 颗粒名称, UUID, 位置, 柜体 FROM Design_Itempicker WHERE 颗粒名称 IN (${chunk.map(()=>'?').join(',')})`;
@@ -526,7 +526,7 @@
 
             try {
                 showToast("检测到作业ID，正在拉取云端清单...");
-                const API_ENDPOINT = 'https://stateless.unity.cn/release/2e87e2f7-8488-4b42-9a17-a4dce04e1ec3/CloudPath';
+                const API_ENDPOINT = 'https://stateless.unity.cn/release/7f18c0dd-4e6d-4718-8128-b7f0ddacbd45/CloudPath';
                 const response = await fetch(API_ENDPOINT, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'getRecords', BitableUUID: 'BitableUUID084', filter: { conjunction: "and", conditions: [{ field_name: "ID", operator: "contains", value: [state.queryID] }] } }) });
                 const data = await response.json();
                 let items = data.data?.items || data.data || data.result?.items || data.result || (Array.isArray(data)?data:[]);
@@ -538,7 +538,7 @@
         async function fetchRecordFromFilepath(filepath) {
             try {
                 showToast("检测到文件路径，正在解析 QM 文件...");
-                const API_ENDPOINT = 'https://stateless.unity.cn/release/2e87e2f7-8488-4b42-9a17-a4dce04e1ec3/CloudPath';
+                const API_ENDPOINT = 'https://stateless.unity.cn/release/7f18c0dd-4e6d-4718-8128-b7f0ddacbd45/CloudPath';
 
                 // Step 1：调用云函数解析 QM 文件
                 const response = await fetch(API_ENDPOINT, {
@@ -1112,7 +1112,7 @@
         }
 
         async function submitJobReport() {
-            const API_ENDPOINT = 'https://stateless.unity.cn/release/2e87e2f7-8488-4b42-9a17-a4dce04e1ec3/CloudPath'; const payloads = [];
+            const API_ENDPOINT = 'https://stateless.unity.cn/release/7f18c0dd-4e6d-4718-8128-b7f0ddacbd45/CloudPath'; const payloads = [];
             const hasVariance = state.pickingTasks.some(t => t.quantity !== t.originalQuantity);
 
             if (state.queryID && state.queryID !== '无' && hasVariance) {
